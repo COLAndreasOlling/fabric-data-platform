@@ -10,6 +10,11 @@ output "workspaces" {
   }
 }
 
+output "orchestrator" {
+  description = "User added as Admin on every workspace."
+  value       = var.orchestrator_admin ? coalesce(one(data.external.orchestrator[*].result.upn), local.orchestrator_object_id) : null
+}
+
 output "lakehouses" {
   description = "Lakehouse IDs and SQL endpoint connection strings."
   value = {

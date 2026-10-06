@@ -58,6 +58,12 @@ Change this with the `cross_workspace_access` variable. Dev identities never get
   a dedicated service principal is the closest non-personal owner.
 - The executor creates the workspaces and so becomes **Admin** of all of them
   automatically, and is added as **capacity admin** in `capacities/`.
+- The **orchestrator** — the person signed in to Azure CLI (`az login`) while
+  Terraform runs — is always added as workspace **Admin**, so they can find and
+  manage the workspaces. Terraform looks the account up with
+  `az ad signed-in-user show`. Where az is signed in as a service principal
+  (GitHub Actions), set `orchestrator_object_id` explicitly. This is a role, not
+  ownership.
 - The Entra app registration, service principal and group are owned by the person
   running bootstrap. That's required: with the Application Developer role you can
   only manage apps you own. Add a colleague with `additional_owners` so you aren't

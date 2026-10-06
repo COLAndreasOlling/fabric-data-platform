@@ -6,6 +6,18 @@ variable "capacity_name_overrides" {
   default     = {}
 }
 
+variable "orchestrator_admin" {
+  description = "Add the person orchestrating the deployment as Admin on every workspace, so they can find and manage them. Should stay true."
+  type        = bool
+  default     = true
+}
+
+variable "orchestrator_object_id" {
+  description = "Entra object ID of the orchestrator (user). Leave null to use the account signed in to Azure CLI (az login). Set it explicitly where az is signed in as a service principal, e.g. in GitHub Actions."
+  type        = string
+  default     = null
+}
+
 variable "workspace_name_prefix" {
   description = "Optional prefix for every workspace name, e.g. \"Contoso-\". Workspace names must be unique in the tenant."
   type        = string

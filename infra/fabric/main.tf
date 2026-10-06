@@ -140,6 +140,31 @@ resource "fabric_workspace_role_assignment" "cross_workspace" {
   }
 }
 
+# The orchestrator - the person signed in to Azure CLI while Terraform runs as
+# the service principal - is always workspace Admin. This is a role, not
+# ownership: items stay owned by the service principal.
+data "external" "orchestrator" {
+  count = var.orchestrator_admin && var.orchestrator_object_id == null ? 1 : 0
+
+  program = ["az", "ad", "signed-in-user", "show", "--query", "{id:id,upn:userPrincipalName}", "--output", "json"]
+}
+
+locals {
+  orchestrator_object_id = var.orchestrator_admin ? coalesce(var.orchestrator_object_id, one(data.external.orchestrator[*].result.id)) : null
+}
+
+resource "fabric_workspace_role_assignment" "orchestrator" {
+  for_each = { for key, ws in local.workspaces : key => ws if var.orchestrator_admin }
+
+  workspace_id = fabric_workspace.this[each.key].id
+  role         = "Admin"
+
+  principal = {
+    id   = local.orchestrator_object_id
+    type = "User"
+  }
+}
+
 resource "fabric_workspace_role_assignment" "additional" {
   for_each = local.additional_role_assignments
 

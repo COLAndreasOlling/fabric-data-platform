@@ -6,5 +6,9 @@ terraform {
       source  = "microsoft/fabric"
       version = ">= 1.0"
     }
+    external = {
+      source  = "hashicorp/external"
+      version = ">= 2.3"
+    }
   }
 }

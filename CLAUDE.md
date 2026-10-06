@@ -64,6 +64,9 @@ environment — see "Using an existing environment" in the guide.
   - Fabric items are created and owned by the executor service principal.
   - The executor becomes workspace Admin by creating the workspaces (no explicit
     assignment — Fabric rejects a duplicate).
+  - The orchestrator (the user signed in to `az`) is **always** workspace Admin
+    (`orchestrator_admin`, looked up with `az ad signed-in-user show`). Never
+    remove this; in CI set `orchestrator_object_id`.
   - Naming: `<env>-<company>-<region>-dp-<version>-da[-<resource>]`; capacity
     names have the hyphens removed (Azure allows only `[a-z0-9]`).
   - SQL artifacts are case insensitive (`Latin1_General_100_CI_AS_KS_WS_SC_UTF8`);

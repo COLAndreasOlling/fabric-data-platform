@@ -208,8 +208,9 @@ terraform init
 terraform plan
 ```
 
-Expect **6 workspaces, 6 warehouses and 4 role assignments** (the workspace
-identities' cross-workspace access, Dev and Prod) to add, plus a
+Expect **6 workspaces, 6 warehouses and 10 role assignments** to add: 4 for the
+workspace identities' cross-workspace access (Dev and Prod) and 6 making **you**
+Admin on every workspace (the plan output shows `orchestrator = "<your UPN>"`), plus a
 **warning** that lakehouses are skipped. That warning is expected.
 
 ```powershell
@@ -223,9 +224,9 @@ terraform apply
 The lakehouse SQL endpoint copies the workspace collation when it's created, and
 Fabric only lets you set that in the portal.
 
-To change the setting you need a role on the workspace. The service principal is
-the only Admin so far, so first give your admin group access. Find the group's
-object ID in Entra, then create `infra/fabric/terraform.tfvars`:
+Step 5 made you (the account signed in to `az`) **Admin** on every workspace,
+so you can change the setting. To give colleagues access as well, add a group in
+`infra/fabric/terraform.tfvars` and apply again:
 
 ```hcl
 additional_role_assignments = [
@@ -235,11 +236,7 @@ additional_role_assignments = [
 ]
 ```
 
-```powershell
-terraform apply
-```
-
-Then, for **DataEngineeringDev** and **DataEngineeringProd**:
+For **DataEngineeringDev** and **DataEngineeringProd**:
 
 1. Open the workspace in Fabric → **Workspace settings**.
 2. **Data Warehouse → Collations**.
@@ -271,7 +268,8 @@ cd ../..
 - **DataEngineering** workspaces contain `LH_Bronze`, `WH_Silver_Sources`,
   `WH_Silver_Models`, `WH_Gold_DataEstate`.
 - **Manage access** on DataEngineeringDev shows the service principal (Admin),
-  your group (Admin) and `ReportingHubDev`'s workspace identity (Viewer).
+  you (Admin), any groups you added and `ReportingHubDev`'s workspace identity
+  (Viewer).
 
 ### 8.2 Collation
 
