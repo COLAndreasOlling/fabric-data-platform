@@ -33,10 +33,16 @@ variable "warehouses" {
   default     = ["WH_Silver_Sources", "WH_Silver_Models", "WH_Gold_DataEstate"]
 }
 
+variable "workspace_collation_confirmed" {
+  description = "Set to true once every workspace's Data Warehouse collation is set to case insensitive in the Fabric portal. Lakehouses are only created after that, because their SQL analytics endpoint takes the workspace collation at creation and can't be changed later."
+  type        = bool
+  default     = false
+}
+
 variable "warehouse_collation" {
-  description = "Warehouse collation. Cannot be changed after creation."
+  description = "Warehouse collation, set explicitly on every warehouse regardless of the workspace setting. Cannot be changed after creation. Default is case insensitive."
   type        = string
-  default     = "Latin1_General_100_BIN2_UTF8"
+  default     = "Latin1_General_100_CI_AS_KS_WS_SC_UTF8"
 
   validation {
     condition     = contains(["Latin1_General_100_BIN2_UTF8", "Latin1_General_100_CI_AS_KS_WS_SC_UTF8"], var.warehouse_collation)

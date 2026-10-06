@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars and adjust.
+
+subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# location            = "westeurope"
+# resource_group_name = "rg-fabric-capacities"
+
+# Set to true if you are Fabric Administrator and want the tenant settings
+# handled here (existing groups are kept):
+# manage_fabric_tenant_settings = true
+
+# github_repository = "COLAndreasOlling/fabric-data-platform"

@@ -87,8 +87,18 @@ resource "fabric_workspace" "this" {
   }
 }
 
+# Fabric has no API for the workspace's Data Warehouse collation, and a
+# lakehouse's SQL analytics endpoint always takes that workspace collation at
+# creation. So lakehouses wait until the setting has been changed by hand.
+check "workspace_collation" {
+  assert {
+    condition     = var.workspace_collation_confirmed
+    error_message = "Lakehouses are skipped. Set Workspace settings > Data Warehouse > Collations to 'Case insensitive' in each workspace, then re-run with workspace_collation_confirmed = true."
+  }
+}
+
 resource "fabric_lakehouse" "this" {
-  for_each = local.lakehouses
+  for_each = { for key, lh in local.lakehouses : key => lh if var.workspace_collation_confirmed }
 
   display_name = each.value.name
   workspace_id = fabric_workspace.this[each.value.workspace_key].id

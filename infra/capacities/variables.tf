@@ -10,15 +10,15 @@ variable "location" {
 }
 
 variable "resource_group_name" {
-  description = "Resource group for the capacities."
+  description = "Resource group for the capacities (created by bootstrap/)."
   type        = string
   default     = "rg-fabric-capacities"
 }
 
 variable "create_resource_group" {
-  description = "Create the resource group. Set to false to use an existing one."
+  description = "Create the resource group here. Leave false when bootstrap/ created it (the executor can't create resource groups)."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "capacities" {
