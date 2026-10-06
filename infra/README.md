@@ -99,16 +99,25 @@ The **Dev** workspaces are connected to the customer's existing repository
 
 ## Expiry warnings
 
-Bootstrap sets up email alerts for every secret in the Key Vault with an expiry
-date (the executor's client secret, the GitHub token): **90 days** before
-(`expiry_warning_days`, through a renewal-reminder secret), **30 days** before and
-**on the day**, to `alert_email_addresses`. Built from Key Vault events → Event
-Grid system topic → Azure Monitor alert → action group (`azapi`, since azurerm
-has no Monitor-alert destination). Details and what breaks on expiry: see the
-guide, *Expiring credentials and warnings*.
+Email alerts before credentials expire, to `alert_email_addresses`: **90**, **60**
+and **30 days** before and **on the day** (`expiry_warning_days` sets the first).
+They live in **Azure**, in the Key Vault's resource group — not in Fabric:
 
-Existing environments without bootstrap don't get these alerts automatically —
-set up the same Event Grid subscription on your vault, or add a calendar reminder.
+| Resource | Purpose |
+|---|---|
+| Action group `<prefix>-ag-secret-expiry` | Who gets the email |
+| Event Grid system topic `<vault>-events` + subscription `credential-expiry-alerts` | Turns Key Vault's *near expiry* (30 days before) and *expired* events into Azure Monitor alerts; only for secrets named `expiry-*` |
+| Marker secrets `expiry-<credential>-early` and `expiry-<credential>` | Expire 60 days early / with the credential, so the events fire at the right times. A message, not a credential |
+
+Built as a module (`infra/modules/expiry-alerts`), used by:
+- **bootstrap** — for the executor it creates (expiry from the new secret);
+- **`infra/monitoring/`** — for existing vaults (run as yourself). It reads each
+  service principal's real secret expiry **from Entra** (`az ad app credential
+  list`), since a Key Vault copy may have no expiry date. `send_test_alert = true`
+  adds a marker that expires 10 minutes after apply, to see the emails.
+
+`Save-GitToken.ps1` writes the same markers for the GitHub token. Details and what
+breaks on expiry: see the guide, *Expiring credentials and warnings*.
 
 ## Ownership and admin rights
 

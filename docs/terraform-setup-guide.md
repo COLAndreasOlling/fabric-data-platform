@@ -131,11 +131,12 @@ terraform plan
 
 (Without `terraform.tfvars`, Terraform asks for the five values instead.)
 
-Read the plan — you should see **22 resources to add**: an application, service
+Read the plan — you should see **23 resources to add**: an application, service
 principal, two federated credentials, a password, a group, two resource groups,
-three role assignments, a Key Vault, four secrets (one is the renewal reminder),
-an action group, an Event Grid system topic and its alert subscription, a wait
-timer, a rotation timer and `platform.json`. Nothing should be changed or destroyed.
+three role assignments, a Key Vault, three secrets, a wait timer, a rotation
+timer, `platform.json`, and in `module.expiry_alerts` an action group, an Event
+Grid system topic, its alert subscription and two expiry markers. Nothing should
+be changed or destroyed.
 
 ```powershell
 terraform apply
@@ -445,22 +446,25 @@ days), and so does the **GitHub token** (whatever was set on GitHub).
 
 Key Vault raises an event 30 days before a secret expires and on the expiry day;
 Event Grid turns these into Azure Monitor alerts emailed to `alert_email_addresses`.
-For an earlier warning, each credential has a *renewal reminder* secret that
-expires earlier, giving a first email `expiry_warning_days` (default **90**) days ahead:
+Because Key Vault's warning is fixed at 30 days, each credential gets two *marker*
+secrets (a message, not a credential) that expire at the right moments:
 
-| When | Email about |
-|---|---|
-| 90 days before | `executor-client-secret-renewal-reminder` / `git-token-renewal-reminder` is "near expiry" — time to plan the renewal |
-| 30 days before | `executor-client-secret` / `git-token` is near expiry |
-| On the day | It has expired |
+| When (default) | Alert about secret | Meaning |
+|---|---|---|
+| 90 days before | `expiry-<credential>-early` near expiry | Plan the renewal |
+| 60 days before | `expiry-<credential>-early` expired | Second reminder |
+| 30 days before | `expiry-<credential>` near expiry | Renew now |
+| On the day | `expiry-<credential>` expired | It has expired |
 
-The alerts are also visible in the Azure portal under **Monitor → Alerts**.
+`<credential>` is `executor-client-secret`, `git-token`, or the label you gave in
+`infra/monitoring`. The alerts are also visible in the Azure portal under
+**Monitor → Alerts**. The resources are in **Azure**, in the Key Vault's resource
+group (action group, Event Grid system topic) — see `infra/README.md`.
 Change the recipients in `infra/capacities/bootstrap/terraform.tfvars` and run
 bootstrap again.
 
 > Key Vault only raises these events for secrets written *after* the alert
-> subscription exists. Bootstrap takes care of the order; if you add secrets to
-> the vault by hand, add them afterwards (or write a new version).
+> subscription exists; the scripts take care of that order.
 
 ### Renewing
 
@@ -526,6 +530,7 @@ creates only its own part. So you can skip whatever your environment already has
 | Only some of it (e.g. a Key Vault but no service principal) | Bootstrap creates everything in one go, so either run it and accept a new vault/resource groups, or import your existing resources (below). |
 | Only want workspaces and items | Do steps 2, 3, 4, 6–9 with an existing service principal and existing capacities. |
 | Only Dev (no Prod yet) | List only `Dev` under `environments` in `platform.json`. Prod can be added later without touching Dev. |
+| Expiry warnings for an existing service principal / vault | Run `infra/monitoring/` as yourself: copy its `terraform.tfvars.example`, set `alert_email_addresses` and `service_principals` (label => client ID), then `terraform init`, `plan`, `apply`. Set `send_test_alert = true` once to see the emails. |
 
 What the `fabric/` part needs from your environment, however it was set up:
 - A service principal (not a user) with its secret in a Key Vault you can read.
