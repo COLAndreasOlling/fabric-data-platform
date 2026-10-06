@@ -6,6 +6,21 @@
 *.pfx
 secrets/
 
+# Terraform (commit .terraform.lock.hcl and *.tfvars.example, never state or real tfvars)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
 # Local data files (keep data in OneLake, not Git)
 data/
 *.csv

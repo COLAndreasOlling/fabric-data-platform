@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and adjust. All values below are optional -
+# the defaults in variables.tf create the six workspaces as designed.
+
+# environments = {
+#   Dev  = { capacity_name = "fcdataplatformdev" }
+#   Prod = { capacity_name = "fcdataplatformprod" }
+# }
+
+# workspace_name_prefix = "Contoso-"
+
+# Give an Entra group admin rights so people can manage the workspaces
+# without owning anything (object ID of the group):
+# additional_role_assignments = [
+#   { workspace_type = "DataEngineering",   principal_id = "00000000-0000-0000-0000-000000000000", principal_type = "Group", role = "Admin" },
+#   { workspace_type = "ReportingHub",      principal_id = "00000000-0000-0000-0000-000000000000", principal_type = "Group", role = "Admin" },
+#   { workspace_type = "ReportingInsights", principal_id = "00000000-0000-0000-0000-000000000000", principal_type = "Group", role = "Admin" },
+# ]

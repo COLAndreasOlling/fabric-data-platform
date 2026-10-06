@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars and adjust.
+
+subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# location            = "westeurope"
+# resource_group_name = "rg-fabric-capacities"
+
+# capacities = {
+#   dev  = { name = "fcdataplatformdev",  sku = "F2" }
+#   prod = { name = "fcdataplatformprod", sku = "F4" }
+# }
+
+# capacity_admins = ["someone@yourcompany.com"]
