@@ -47,7 +47,11 @@ git --version
 ### 0.3 The customer's Git repository — must exist before you start
 
 Terraform **connects** the Dev workspaces to Git; it does **not** create the
-repository or the branch. Confirm with the customer:
+repository or the branch. It **does** create the workspace folders if they're
+missing (Fabric refuses to connect to a folder that doesn't exist): one commit
+with a `README.md` per folder, made by the service principal (Azure DevOps) or
+the token's account (GitHub). If `main` has a branch policy / protection that
+blocks direct commits, create the folders yourself first. Confirm with the customer:
 
 **GitHub**
 - [ ] A repository exists, e.g. `https://github.com/<owner>/<repo>`.
@@ -216,10 +220,13 @@ You'll see `Saved as secret 'git-token' in Key Vault '…'`.
 ### Azure DevOps: add the service principal to the organization
 
 1. In Azure DevOps: **Organization settings → Users → Add users**.
-2. Search for the service principal `<company>-<region>-dp-<version>-da-sp-terraform`,
-   access level **Basic**, add it to the **project** with the **Contributors** group.
-3. Check: **Project settings → Repositories → <repo> → Security** — the service
-   principal (through Contributors) has **Contribute** = Allow.
+2. Search for the service principal `<company>-<region>-dp-<version>-da-sp-terraform`
+   and set the access level to **Basic**. *Stakeholder* (free) is not enough:
+   Stakeholders can't read or write code in Repos, so Fabric can't sync.
+3. In the same dialog, add it to the **project** in the **Contributors** group.
+   The licence only lets it into Repos; Contributors gives it permission to push.
+4. Check: **Project settings → Repositories → <repo> → Security** — the service
+   principal (through Contributors) has **Read** and **Contribute** = Allow.
 
 No token is needed: Fabric connects as the service principal.
 
@@ -298,8 +305,9 @@ terraform plan
 Check the plan:
 - The first lines show `orchestrator = "<your UPN>"` — that's you, made Admin on every workspace.
 - **Add**: 6 workspaces, 6 warehouses, 10 role assignments (4 cross-workspace,
-  6 for you), 1 Git connection, 1 connection role assignment, 3 workspace Git
-  connections (the Dev workspaces).
+  6 for you), 1 Git connection, 1 connection role assignment,
+  `terraform_data.git_folders` (creates missing folders in the repository) and
+  3 workspace Git connections (the Dev workspaces).
 - A **warning** that lakehouses are skipped. That's expected.
 - Nothing to change or destroy.
 
@@ -438,6 +446,8 @@ Azure portal.) Terraform needs the capacities **running** to deploy.
 | `The URL doesn't match git_provider` | Provider and URL disagree, or the URL has extra parts | Copy the plain repository URL (see 0.4) |
 | Git connection fails: credentials / unauthorized | GitHub: token expired or lacks Contents read/write on that repository. Azure DevOps: service principal not in the organization/project, or the organization is in another tenant | Step 3 |
 | Git connect fails: branch not found | The branch doesn't exist (empty repository) | Create the branch / make a first commit in the repository |
+| `GitProviderResourceNotFound` | The workspace folder doesn't exist in the repository | Normally created by `terraform_data.git_folders`; if that was skipped, create the folders (e.g. with a README.md) and apply again |
+| `couldn't commit the folders` / `couldn't create … (HTTP 403/409)` | Branch policy or protection blocks direct commits, or no write access | Create the folders yourself through a pull request, then apply again — existing folders are left alone |
 | `Couldn't read secret … from Key Vault` | Wrong vault or secret name, or no access | Pass `-KeyVaultName` / `-ClientSecretName`; you need *Key Vault Secrets User* |
 | Bootstrap prompts for the service principal | ARM_/FABRIC_ variables still set | Step 1.2 |
 

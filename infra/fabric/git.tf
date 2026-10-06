@@ -101,6 +101,36 @@ resource "fabric_connection" "git_azure_devops" {
   }
 }
 
+# Fabric only connects to folders that already exist, so missing ones are
+# created first (a README.md committed into each). Existing folders are left
+# alone; the repository and branch are never created. Re-runs when the
+# repository, branch or folders change. Credentials come from the session
+# (Load-Credentials.ps1), not from Terraform.
+resource "terraform_data" "git_folders" {
+  count = length(local.git_workspaces) > 0 ? 1 : 0
+
+  triggers_replace = {
+    url         = local.git_repo.url
+    branch      = var.git_branch
+    directories = sort([for ws in local.git_workspaces : ws.directory])
+  }
+
+  provisioner "local-exec" {
+    interpreter = [var.powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]
+    command     = abspath("${path.module}/../Initialize-GitFolders.ps1")
+
+    environment = {
+      GIT_PROVIDER     = var.git_provider
+      GIT_OWNER        = coalesce(local.git_repo.owner, "-")
+      GIT_ORGANIZATION = coalesce(local.git_repo.org, "-")
+      GIT_PROJECT      = coalesce(local.git_repo.project, "-")
+      GIT_REPOSITORY   = local.git_repo.repository
+      GIT_BRANCH       = var.git_branch
+      GIT_DIRECTORIES  = join(";", sort([for ws in local.git_workspaces : ws.directory]))
+    }
+  }
+}
+
 # Lets the orchestrator use the connection from the workspace's Source control pane.
 resource "fabric_connection_role_assignment" "git_orchestrator" {
   count = var.orchestrator_admin && length(local.git_workspaces) > 0 ? 1 : 0
@@ -135,6 +165,7 @@ resource "fabric_workspace_git" "this" {
     connection_id = local.git_connection_id
   }
 
-  # Connect after the items exist, so the first sync sees the complete workspace.
-  depends_on = [fabric_lakehouse.this, fabric_warehouse.this]
+  # Connect after the folders and items exist, so the first sync sees the
+  # complete workspace.
+  depends_on = [terraform_data.git_folders, fabric_lakehouse.this, fabric_warehouse.this]
 }

@@ -83,7 +83,9 @@ environment — see "Using an existing environment" in the guide.
   - Bootstrap never touches Fabric tenant settings.
   - Cross-workspace access never crosses environments.
   - Git: only `git_environments` (Dev) are connected; the repository and branch
-    must already exist; `git_secret` stays ephemeral (never in state);
+    must already exist; missing workspace folders are created by
+    `infra/Initialize-GitFolders.ps1` (a commit to the customer's repo — say so
+    when presenting the plan); `git_secret` stays ephemeral (never in state);
     `PreferWorkspace` is the default initialization strategy.
 - Update `infra/README.md` and the guide when behaviour changes.
 

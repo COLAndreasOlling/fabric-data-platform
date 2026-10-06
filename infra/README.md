@@ -74,6 +74,13 @@ The **Dev** workspaces are connected to the customer's existing repository
   new token/secret.
 - The URL is parsed into owner/organization/project/repository and checked
   against `git_provider` — nothing is guessed.
+- Missing workspace folders are created first by `Initialize-GitFolders.ps1`
+  (run by `terraform_data.git_folders`): one `README.md` per folder, committed to
+  the branch. Fabric's API won't connect to a folder that doesn't exist. Existing
+  folders are untouched; the repository and branch are never created. Set
+  `powershell = "pwsh"` where Windows PowerShell isn't available (Linux CI).
+- Azure DevOps: the service principal needs **Basic** access (Stakeholder can't
+  use Repos) and Contribute on the repository (e.g. project Contributors).
 - `git_initialization_strategy` defaults to `PreferWorkspace`: connecting never
   overwrites workspace items with repository content.
 

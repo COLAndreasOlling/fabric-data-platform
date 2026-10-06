@@ -84,6 +84,12 @@ variable "git_initialization_strategy" {
   }
 }
 
+variable "powershell" {
+  description = "PowerShell used to create missing Git folders: powershell (Windows PowerShell) or pwsh (PowerShell 7, e.g. on Linux/GitHub Actions)."
+  type        = string
+  default     = "powershell"
+}
+
 # --- Access ------------------------------------------------------------------------
 
 variable "orchestrator_admin" {
