@@ -35,9 +35,18 @@ environment — see "Using an existing environment" in the guide.
   the service principal: the providers set `use_cli = false` on purpose so no
   personal account owns Fabric items. Never "fix" an auth error by enabling
   `use_cli` — load the credentials (guide step 3) instead.
-- **Credentials only in env vars of the same command/session.** Read them from
-  Key Vault with `az keyvault secret show` inside the command that runs
-  Terraform. Never print, echo, log or write the client secret to a file.
+- **Credentials only in env vars of the same command/session.** Dot-source
+  `infra/Load-Credentials.ps1 -GitProvider <GitHub|AzureDevOps>` (plus
+  `-KeyVaultName` / `-ClientSecretName` in existing environments) in the same
+  command that runs Terraform. Never print, echo, log or write a secret to a
+  file, and never ask the user to paste one into the chat.
+- **Ask, don't guess, for Git details.** Before planning `infra/fabric/`, ask the
+  user for `git_provider`, `git_repository_url`, `git_branch` and `git_folder`,
+  confirm the repository and branch exist (guide step 0.3) and that access is set
+  up (step 3), and write the answers to `infra/fabric/terraform.tfvars`. Don't
+  infer them from this repository's own remote. A GitHub token is stored by the
+  user running `./infra/Save-GitToken.ps1` in their own terminal (it needs
+  hidden input, which Claude's shell can't provide).
 - **No interactive prompts in Claude's shell.** Terraform prompts (bootstrap
   naming inputs) don't work non-interactively: ask the user for the values and
   put them in that root's `terraform.tfvars` (git-ignored).
@@ -73,6 +82,9 @@ environment — see "Using an existing environment" in the guide.
     lakehouses wait for `workspace_collation_confirmed = true`.
   - Bootstrap never touches Fabric tenant settings.
   - Cross-workspace access never crosses environments.
+  - Git: only `git_environments` (Dev) are connected; the repository and branch
+    must already exist; `git_secret` stays ephemeral (never in state);
+    `PreferWorkspace` is the default initialization strategy.
 - Update `infra/README.md` and the guide when behaviour changes.
 
 ## Never commit

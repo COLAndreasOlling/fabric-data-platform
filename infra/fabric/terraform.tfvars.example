@@ -1,13 +1,27 @@
-# Copy to terraform.tfvars and adjust. All values below are optional -
-# capacity names come from ../platform.json (written by bootstrap).
+# Copy to terraform.tfvars and fill in. Capacity names come from
+# ../platform.json (written by bootstrap).
 
-# Second pass, after setting the DataEngineering workspaces to case insensitive:
+# --- Git (required - Terraform asks if these are missing) -----------------------
+# The repository and branch must already exist. See docs/terraform-setup-guide.md, step 0.3.
+git_provider       = "GitHub"                                # "GitHub" or "AzureDevOps"
+git_repository_url = "https://github.com/<owner>/<repo>"     # or "https://dev.azure.com/<organization>/<project>/_git/<repo>"
+git_branch         = "main"
+git_folder         = "/fabric"                               # each workspace gets /fabric/<WorkspaceType>
+
+# The token (GitHub) or client secret (Azure DevOps) is NOT set here - it's loaded
+# into TF_VAR_git_secret by:  . ./infra/Load-Credentials.ps1 -GitProvider <provider>
+# Increase this after storing a new token/secret:
+# git_secret_version = 1
+
+# --- Second pass, after setting the DataEngineering workspaces to case insensitive ---
 # workspace_collation_confirmed = true
+
+# --- Optional ---------------------------------------------------------------------
+# Prefix for workspace names, e.g. when the names are already taken:
+# workspace_name_prefix = "IaC-"
 
 # Use an existing capacity instead of the generated one:
 # capacity_name_overrides = { Dev = "mytrialcapacity" }
-
-# workspace_name_prefix = "Contoso-"
 
 # Give an Entra group admin rights so people can manage the workspaces
 # without owning anything (object ID of the group):

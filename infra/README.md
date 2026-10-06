@@ -10,7 +10,7 @@ Three Terraform configurations, each with its own state, run in this order:
 |---|---|---|---|
 | 1 | `capacities/bootstrap/` | Executor app registration + service principal, GitHub OIDC trust, security group, resource groups, Contributor roles, Key Vault with the executor's credentials, `platform.json` | **You** (`az login`) - once, and again to rotate the secret |
 | 2 | `capacities/` | Fabric capacities (Dev, Prod) | Executor service principal |
-| 3 | `fabric/` | 6 workspaces, lakehouse, warehouses, workspace identities, cross-workspace access | Executor service principal |
+| 3 | `fabric/` | 6 workspaces, lakehouse, warehouses, workspace identities, cross-workspace access, Git connection for the Dev workspaces | Executor service principal |
 
 `infra/platform.json` is written by bootstrap and read by the other two. It holds
 names and IDs only (no secrets) and should be committed. Without bootstrap (existing
@@ -48,6 +48,41 @@ Cross-workspace access, within the same environment only:
 | ReportingInsights | Viewer | ReportingHub (use the semantic models) |
 
 Change this with the `cross_workspace_access` variable. Dev identities never get access to Prod.
+
+## Git integration
+
+The **Dev** workspaces are connected to the customer's existing repository
+(`git_environments`, default `["Dev"]`); Prod gets content through deployment.
+
+| Variable | Asked when missing | Example |
+|---|---|---|
+| `git_provider` | yes | `GitHub` / `AzureDevOps` |
+| `git_repository_url` | yes | `https://github.com/<owner>/<repo>`, `https://dev.azure.com/<org>/<project>/_git/<repo>` |
+| `git_branch` | yes | `main` (must exist) |
+| `git_folder` | yes | `/fabric` → `/fabric/DataEngineering`, `/fabric/ReportingHub`, `/fabric/ReportingInsights` |
+| `git_secret` | loaded by `Load-Credentials.ps1` | GitHub token / executor client secret |
+
+- **GitHub**: a Fabric connection (`GitHubSourceControl`) with a personal access
+  token, stored in Key Vault as `git-token` by `infra/Save-GitToken.ps1`.
+- **Azure DevOps**: a Fabric connection (`AzureDevOpsSourceControl`) authenticated
+  as the executor service principal, which must be added to the Azure DevOps
+  organization and project.
+- The connection is owned by the executor; the orchestrator gets the *User* role
+  on it so they can use it from the Source control pane.
+- `git_secret` is an **ephemeral** variable passed only to write-only arguments:
+  it never ends up in the Terraform state. Bump `git_secret_version` after a
+  new token/secret.
+- The URL is parsed into owner/organization/project/repository and checked
+  against `git_provider` — nothing is guessed.
+- `git_initialization_strategy` defaults to `PreferWorkspace`: connecting never
+  overwrites workspace items with repository content.
+
+## Credential scripts
+
+| Script | What it does |
+|---|---|
+| `. ./infra/Load-Credentials.ps1 -GitProvider <GitHub\|AzureDevOps>` | Checks you're signed in to the tenant in `platform.json`, loads the executor's credentials and `TF_VAR_git_secret` from Key Vault into the session. Parameters for existing environments: `-KeyVaultName`, `-ClientSecretName`, `-GitTokenSecretName`. |
+| `./infra/Save-GitToken.ps1` | Asks for a GitHub token (hidden) and its expiry date and stores it in Key Vault as `git-token`. |
 
 ## Ownership and admin rights
 
@@ -123,18 +158,11 @@ Leave a setting alone if it's already enabled for the entire organization.
 
 ## 2. and 3. Running as the executor
 
-Load the credentials from Key Vault into the current terminal (never into files):
+Load the credentials from Key Vault into the current terminal (never into files),
+with the leading dot:
 
 ```powershell
-$kv = (Get-Content infra/platform.json | ConvertFrom-Json).key_vault_name
-
-$env:ARM_TENANT_ID     = az keyvault secret show --vault-name $kv --name executor-tenant-id     --query value -o tsv
-$env:ARM_CLIENT_ID     = az keyvault secret show --vault-name $kv --name executor-client-id     --query value -o tsv
-$env:ARM_CLIENT_SECRET = az keyvault secret show --vault-name $kv --name executor-client-secret --query value -o tsv
-
-$env:FABRIC_TENANT_ID     = $env:ARM_TENANT_ID
-$env:FABRIC_CLIENT_ID     = $env:ARM_CLIENT_ID
-$env:FABRIC_CLIENT_SECRET = $env:ARM_CLIENT_SECRET
+. ./infra/Load-Credentials.ps1 -GitProvider GitHub     # or AzureDevOps
 ```
 
 Capacities (they cost money while running - pause them when idle):

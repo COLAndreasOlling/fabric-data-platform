@@ -1,8 +1,9 @@
 # Terraform setup guide
 
 Step-by-step instructions for deploying the Fabric data platform from scratch.
-Every command is PowerShell, run from the repository root
-(`C:\Repos\Github\fabric-data-platform`) unless a step says otherwise.
+Every command is PowerShell, run from the repository root unless a step says
+otherwise. Follow the steps in order — each one tells you what to expect, so you
+can stop as soon as something looks different.
 
 **Already have an Azure/Fabric environment** with a service principal, Key Vault or
 capacities? Read [Using an existing environment](#using-an-existing-environment)
@@ -10,29 +11,30 @@ first — you can skip parts of this guide.
 
 | Step | What happens | Signed in as | Time |
 |---|---|---|---|
-| 0 | Check tools and roles | You | 5 min |
+| 0 | Check tools, roles and the customer's Git repository; collect your answers | You | 15 min |
 | 1 | Bootstrap: service principal, resource groups, Key Vault | You | 5 min |
 | 2 | Fabric tenant settings (manual) | You, Fabric admin | 5 min |
-| 3 | Load the service principal's credentials | — | 1 min |
-| 4 | Capacities | Service principal | 5 min |
-| 5 | Workspaces and warehouses (pass 1) | Service principal | 5 min |
-| 6 | Case-insensitive collation (manual) | You | 2 min |
-| 7 | Lakehouse (pass 2) | Service principal | 2 min |
-| 8 | Verify | You | 5 min |
+| 3 | Give the platform access to the Git repository | You | 5 min |
+| 4 | Load the credentials | You | 1 min |
+| 5 | Capacities | Service principal | 5 min |
+| 6 | Workspaces, warehouses and Git connection (pass 1) | Service principal | 5 min |
+| 7 | Case-insensitive collation (manual) | You | 2 min |
+| 8 | Lakehouse (pass 2) | Service principal | 2 min |
+| 9 | Verify and make the first Git commit | You | 10 min |
 
 ---
 
-## Step 0 — Check tools and roles
+## Step 0 — Before you start
 
-### Tools
+### 0.1 Tools
 
 ```powershell
-terraform version   # 1.8 or newer
+terraform version   # 1.10 or newer
 az version          # Azure CLI
 git --version
 ```
 
-### Roles you need
+### 0.2 Roles you need
 
 | Where | Role | Used for |
 |---|---|---|
@@ -40,20 +42,47 @@ git --version
 | Entra ID | **Application Developer** (or higher) | Creating the app registration |
 | Entra ID | Allowed to create security groups (default) | Executor group |
 | Fabric | **Fabric Administrator** | Tenant settings in step 2 |
+| Git (customer's) | Admin on the repository / Azure DevOps project | Step 3 |
 
-### Decide your naming inputs
+### 0.3 The customer's Git repository — must exist before you start
 
-You'll be prompted for these in step 1. Write them down — they become part of
-every resource name and **can't be changed later** without recreating everything.
+Terraform **connects** the Dev workspaces to Git; it does **not** create the
+repository or the branch. Confirm with the customer:
 
-| Prompt | Example | Becomes |
-|---|---|---|
-| `subscription_id` | `1a2b3c4d-…` | Where everything is deployed |
-| `company_code` | `cg` | `p-cg-we-dp-01-da` |
-| `location` | `westeurope` | `we` in names; the Azure region |
-| `platform_version` | `01` | `…-dp-01-…` |
+**GitHub**
+- [ ] A repository exists, e.g. `https://github.com/<owner>/<repo>`.
+- [ ] The branch you'll use (e.g. `main`) exists — the repository has at least one commit.
+- [ ] Someone can create a **personal access token** for it (step 3). Commits from
+      Fabric are made as that token's GitHub account, so a shared/service account is
+      better than a person's.
+- [ ] If it's in a GitHub organization: fine-grained tokens are allowed (or use a classic token).
 
-Key Vault names are **globally unique** in Azure. If `p-<company>-<region>-dp-01-da-kv`
+**Azure DevOps**
+- [ ] An organization and project with a repository, e.g.
+      `https://dev.azure.com/<organization>/<project>/_git/<repo>`.
+- [ ] The branch you'll use (e.g. `main`) exists — the repository has at least one commit.
+- [ ] The Azure DevOps organization is **connected to the same Entra tenant** as
+      Fabric (Organization settings → Microsoft Entra).
+- [ ] Someone who is Project Collection Administrator can add a service principal (step 3).
+
+### 0.4 Collect your answers
+
+Write these down. Terraform asks for each one — the same answers every time —
+so it's easiest to put them in `terraform.tfvars` files as you go.
+
+| Asked in | Question | Example | Notes |
+|---|---|---|---|
+| Step 1 | `subscription_id` | `1a2b3c4d-…` | Where everything is deployed |
+| Step 1 | `company_code` | `cg` | Becomes `p-cg-we-dp-01-da` |
+| Step 1 | `location` | `westeurope` | `we` in names; the Azure region |
+| Step 1 | `platform_version` | `01` | `…-dp-01-…` |
+| Step 6 | `git_provider` | `GitHub` or `AzureDevOps` | Exactly as written |
+| Step 6 | `git_repository_url` | `https://github.com/contoso/fabric` | Copy from the browser / Clone button |
+| Step 6 | `git_branch` | `main` | Must already exist |
+| Step 6 | `git_folder` | `/fabric` | Each workspace gets a subfolder: `/fabric/DataEngineering`, `/fabric/ReportingHub`, `/fabric/ReportingInsights`. Use `/` for the repository root |
+
+The naming inputs **can't be changed later** without recreating everything. Key
+Vault names are **globally unique** in Azure; if `p-<company>-<region>-dp-01-da-kv`
 is taken, use another `platform_version` (e.g. `02`).
 
 ---
@@ -63,45 +92,51 @@ is taken, use another `platform_version` (e.g. `02`).
 ### 1.1 Sign in as yourself
 
 ```powershell
-az login --tenant <your-tenant-id-or-domain>
-az account set --subscription <subscription-id>
-az account show --query "{subscription:name, user:user.name}" -o table
+az login --tenant <customer-tenant-id-or-domain>
 ```
 
-Check that the subscription and user are the ones you expect.
+If the sign-in window picks the wrong account, use
+`az login --tenant <tenant> --use-device-code` and open the link in a private
+browser window.
+
+```powershell
+az account set --subscription <subscription-id>
+az account show --query "{tenant:tenantId, subscription:name, user:user.name}" -o table
+```
+
+Check that the tenant, subscription and user are the ones you expect.
 
 ### 1.2 Make sure no service principal variables are set
 
-Bootstrap must run as **you**. If you ran step 3 earlier in this terminal, clear them:
+Bootstrap must run as **you**. In a terminal where you ran step 4 before, clear them:
 
 ```powershell
-Remove-Item Env:ARM_*, Env:FABRIC_* -ErrorAction SilentlyContinue
+Remove-Item Env:ARM_*, Env:FABRIC_*, Env:TF_VAR_git_secret -ErrorAction SilentlyContinue
 ```
 
 ### 1.3 Run bootstrap
 
 ```powershell
 cd infra/capacities/bootstrap
+Copy-Item terraform.tfvars.example terraform.tfvars
+notepad terraform.tfvars        # fill in the four values from 0.4, remove the #
 terraform init
 terraform plan
 ```
 
-Answer the four prompts. Read the plan — you should see **19 resources to add**: an
-application, service principal, two federated credentials, a password, a group,
-two resource groups, three role assignments, a Key Vault, three secrets, a wait
-timer, a rotation timer and `platform.json`. Nothing should be changed or
-destroyed.
+(Without `terraform.tfvars`, Terraform asks for the four values instead.)
+
+Read the plan — you should see **19 resources to add**: an application, service
+principal, two federated credentials, a password, a group, two resource groups,
+three role assignments, a Key Vault, three secrets, a wait timer, a rotation timer
+and `platform.json`. Nothing should be changed or destroyed.
 
 ```powershell
 terraform apply
 ```
 
-Answer the prompts again and type `yes`. It takes a few minutes (including a 90
-second wait for Key Vault permissions).
-
-> **Tip:** to avoid answering the prompts every time, copy
-> `terraform.tfvars.example` to `terraform.tfvars` and fill it in. That file is
-> git-ignored.
+Type `yes`. It takes a few minutes (including a 90 second wait for Key Vault
+permissions).
 
 ### 1.4 Check the result
 
@@ -138,51 +173,86 @@ git push
 
 ## Step 2 — Fabric tenant settings (manual)
 
-The scripts don't change tenant settings. As Fabric administrator:
+The scripts don't change tenant settings. As Fabric administrator, open
+**app.fabric.microsoft.com → Settings (gear) → Admin portal → Tenant settings**
+and check each setting below:
 
-1. Open **app.fabric.microsoft.com → Settings (gear) → Admin portal → Tenant settings**.
-2. Search for **Service principals can create workspaces, connections, and deployment pipelines**.
-   - If it's **enabled for the entire organization**: leave it.
-   - If it's **enabled for specific security groups**: add `<company>-<region>-dp-<version>-da-sg-terraform-executors`
-     to the list. Don't remove existing groups.
-   - If it's **disabled**: enable it for *Specific security groups* and add only that group.
-3. Repeat for **Service principals can call Fabric public APIs**.
-4. Click **Apply** on each. Changes can take up to 15 minutes.
+| Setting | Needed for |
+|---|---|
+| *Service principals can create workspaces, connections, and deployment pipelines* | Workspaces and the Git connection |
+| *Service principals can call Fabric public APIs* | Everything the service principal does |
+| *Users can synchronize workspace items with their Git repositories* | Git integration |
+| *Users can sync workspace items with GitHub repositories* | Only if the repository is on GitHub |
 
----
+For each one:
+- **Enabled for the entire organization**: leave it.
+- **Enabled for specific security groups**: add the group
+  `<company>-<region>-dp-<version>-da-sg-terraform-executors`. Don't remove existing groups.
+- **Disabled**: enable it for *Specific security groups* and add only that group.
 
-## Step 3 — Load the service principal's credentials
-
-Steps 4–7 run as the service principal. Load its credentials from Key Vault into
-the **current terminal only** (you stay signed in to `az` as yourself; that's
-just to read the vault):
-
-```powershell
-$kv = (Get-Content infra/platform.json | ConvertFrom-Json).key_vault_name
-
-$env:ARM_TENANT_ID     = az keyvault secret show --vault-name $kv --name executor-tenant-id     --query value -o tsv
-$env:ARM_CLIENT_ID     = az keyvault secret show --vault-name $kv --name executor-client-id     --query value -o tsv
-$env:ARM_CLIENT_SECRET = az keyvault secret show --vault-name $kv --name executor-client-secret --query value -o tsv
-
-$env:FABRIC_TENANT_ID     = $env:ARM_TENANT_ID
-$env:FABRIC_CLIENT_ID     = $env:ARM_CLIENT_ID
-$env:FABRIC_CLIENT_SECRET = $env:ARM_CLIENT_SECRET
-```
-
-Check they're set (without printing the secret):
-
-```powershell
-"Client ID: $env:ARM_CLIENT_ID  Secret loaded: $([bool]$env:ARM_CLIENT_SECRET)"
-```
-
-If you open a new terminal, repeat this step.
+Click **Apply** on each. Changes can take up to 15 minutes.
 
 ---
 
-## Step 4 — Capacities
+## Step 3 — Give the platform access to the Git repository
+
+### GitHub: create a token and store it in Key Vault
+
+1. Sign in to GitHub with the account Fabric should commit as.
+2. **Settings → Developer settings → Personal access tokens → Fine-grained tokens →
+   Generate new token.**
+   - *Resource owner*: the repository's owner.
+   - *Repository access*: **Only select repositories** → the repository.
+   - *Permissions → Repository → Contents*: **Read and write**.
+   - *Expiration*: as long as the organization allows; note the date.
+3. Copy the token, then store it — it asks for the token (hidden) and the expiry date:
+
+```powershell
+./infra/Save-GitToken.ps1
+```
+
+You'll see `Saved as secret 'git-token' in Key Vault '…'`.
+
+### Azure DevOps: add the service principal to the organization
+
+1. In Azure DevOps: **Organization settings → Users → Add users**.
+2. Search for the service principal `<company>-<region>-dp-<version>-da-sp-terraform`,
+   access level **Basic**, add it to the **project** with the **Contributors** group.
+3. Check: **Project settings → Repositories → <repo> → Security** — the service
+   principal (through Contributors) has **Contribute** = Allow.
+
+No token is needed: Fabric connects as the service principal.
+
+---
+
+## Step 4 — Load the credentials
+
+Steps 5–8 run as the service principal. This loads its credentials (and the Git
+secret) from Key Vault into the **current terminal only**. Note the leading dot:
+
+```powershell
+. ./infra/Load-Credentials.ps1 -GitProvider GitHub        # or AzureDevOps
+```
+
+It checks that you're signed in to the right tenant as yourself, and shows:
+
+```
+Credentials loaded for this PowerShell session:
+  Orchestrator (you)  : you@customer.com
+  Tenant              : …
+  Service principal   : …
+  Key Vault           : p-…-kv
+  Git provider        : GitHub (token from secret 'git-token')
+```
+
+If you open a new terminal, run it again.
+
+---
+
+## Step 5 — Capacities
 
 > Capacities are **billed per hour while running**. Only do this step when
-> you're ready to pay for them, and pause them when idle (step 8.3).
+> you're ready to pay for them, and pause them when idle (step 9.4).
 
 ```powershell
 cd infra/capacities
@@ -200,18 +270,38 @@ cd ../..
 
 ---
 
-## Step 5 — Workspaces and warehouses (pass 1)
+## Step 6 — Workspaces, warehouses and Git (pass 1)
+
+Put your Git answers from 0.4 in `infra/fabric/terraform.tfvars`:
 
 ```powershell
 cd infra/fabric
+Copy-Item terraform.tfvars.example terraform.tfvars
+notepad terraform.tfvars
+```
+
+```hcl
+git_provider       = "GitHub"                              # or "AzureDevOps"
+git_repository_url = "https://github.com/<owner>/<repo>"   # or https://dev.azure.com/<org>/<project>/_git/<repo>
+git_branch         = "main"
+git_folder         = "/fabric"
+```
+
+(Without these lines, Terraform asks for them. A URL that doesn't match the
+provider is rejected with an explanation.)
+
+```powershell
 terraform init
 terraform plan
 ```
 
-Expect **6 workspaces, 6 warehouses and 10 role assignments** to add: 4 for the
-workspace identities' cross-workspace access (Dev and Prod) and 6 making **you**
-Admin on every workspace (the plan output shows `orchestrator = "<your UPN>"`), plus a
-**warning** that lakehouses are skipped. That warning is expected.
+Check the plan:
+- The first lines show `orchestrator = "<your UPN>"` — that's you, made Admin on every workspace.
+- **Add**: 6 workspaces, 6 warehouses, 10 role assignments (4 cross-workspace,
+  6 for you), 1 Git connection, 1 connection role assignment, 3 workspace Git
+  connections (the Dev workspaces).
+- A **warning** that lakehouses are skipped. That's expected.
+- Nothing to change or destroy.
 
 ```powershell
 terraform apply
@@ -219,14 +309,20 @@ terraform apply
 
 ---
 
-## Step 6 — Case-insensitive collation (manual)
+## Step 7 — Case-insensitive collation (manual)
 
 The lakehouse SQL endpoint copies the workspace collation when it's created, and
-Fabric only lets you set that in the portal.
+Fabric only lets you set that in the portal. You're Admin on every workspace
+(step 6), so you can change it.
 
-Step 5 made you (the account signed in to `az`) **Admin** on every workspace,
-so you can change the setting. To give colleagues access as well, add a group in
-`infra/fabric/terraform.tfvars` and apply again:
+For **DataEngineeringDev** and **DataEngineeringProd**:
+
+1. Open the workspace in Fabric → **Workspace settings**.
+2. **Data Warehouse → Collations**.
+3. Choose **Case insensitive (Latin1_General_100_CI_AS_KS_WS_SC_UTF8)** and save.
+
+To give colleagues access as well, add a group to `infra/fabric/terraform.tfvars`
+(and apply in step 8):
 
 ```hcl
 additional_role_assignments = [
@@ -236,15 +332,9 @@ additional_role_assignments = [
 ]
 ```
 
-For **DataEngineeringDev** and **DataEngineeringProd**:
-
-1. Open the workspace in Fabric → **Workspace settings**.
-2. **Data Warehouse → Collations**.
-3. Choose **Case insensitive (Latin1_General_100_CI_AS_KS_WS_SC_UTF8)** and save.
-
 ---
 
-## Step 7 — Lakehouse (pass 2)
+## Step 8 — Lakehouse (pass 2)
 
 Add this line to `infra/fabric/terraform.tfvars`:
 
@@ -260,9 +350,9 @@ cd ../..
 
 ---
 
-## Step 8 — Verify
+## Step 9 — Verify
 
-### 8.1 In Fabric
+### 9.1 Workspaces and access
 
 - Six workspaces exist, each on the right capacity (Workspace settings → License info).
 - **DataEngineering** workspaces contain `LH_Bronze`, `WH_Silver_Sources`,
@@ -271,7 +361,7 @@ cd ../..
   you (Admin), any groups you added and `ReportingHubDev`'s workspace identity
   (Viewer).
 
-### 8.2 Collation
+### 9.2 Collation
 
 Open each warehouse and the `LH_Bronze` SQL analytics endpoint, run:
 
@@ -281,7 +371,23 @@ SELECT name, collation_name FROM sys.databases;
 
 Every row should say `Latin1_General_100_CI_AS_KS_WS_SC_UTF8`.
 
-### 8.3 Pause capacities when idle
+### 9.3 Git — make the first commit
+
+```powershell
+terraform -chdir=infra/fabric output git
+```
+
+shows the repository, branch and a folder per Dev workspace. Then, in each Dev workspace:
+
+1. **Source control** (top bar) shows the branch and the items that aren't in Git
+   yet (e.g. the warehouses and lakehouse in DataEngineeringDev).
+2. Select all → **Commit** with a message like "Initial commit".
+3. The items now appear in the repository under `/fabric/DataEngineering` etc.
+
+If Source control asks for credentials, choose the connection
+`git-<owner>-<repo>` (you have access to it).
+
+### 9.4 Pause capacities when idle
 
 ```powershell
 $p = Get-Content infra/platform.json | ConvertFrom-Json
@@ -298,18 +404,23 @@ Azure portal.) Terraform needs the capacities **running** to deploy.
 
 ## Day-to-day changes
 
-1. Load credentials (step 3).
+1. Load credentials (step 4).
 2. Edit `.tf` / `terraform.tfvars`.
 3. `terraform plan` — read it carefully. **Any line saying `must be replaced` or
-   `destroy` on a lakehouse or warehouse deletes its data.**
+   `destroy` on a lakehouse, warehouse or workspace deletes its data.** Changing
+   the Git repository, branch or folder replaces the workspace's Git connection
+   (no data loss, but uncommitted changes are lost).
 4. `terraform apply`.
 5. Commit the `.tf` changes (never state or `terraform.tfvars`).
 
-## Rotating the client secret
+## Rotating secrets
 
-The secret is valid for 730 days. Before it expires, run step 1.3 again (as
-yourself) — after the rotation date it creates a new secret and updates Key Vault.
-Check the expiry with `terraform output` in `infra/capacities/bootstrap`.
+- **Executor client secret** (730 days): run step 1.3 again as yourself — after the
+  rotation date it creates a new secret and updates Key Vault. For Azure DevOps, then
+  increase `git_secret_version` in `infra/fabric/terraform.tfvars` and apply, so the
+  Git connection gets the new secret.
+- **GitHub token**: create a new one, run `./infra/Save-GitToken.ps1`, increase
+  `git_secret_version` and apply.
 
 ## Troubleshooting
 
@@ -320,9 +431,14 @@ Check the expiry with `terraform output` in `infra/capacities/bootstrap`.
 | `VaultAlreadyExists` / name not available | Key Vault name taken globally, or a deleted vault with that name is still soft-deleted | Use another `platform_version`, or recover the deleted vault |
 | `Authorization_RequestDenied` creating the group | Users can't create security groups in your tenant | Ask an Entra admin for Groups Administrator, or to create the group |
 | `401 Unauthorized` / `403 Forbidden` from the Fabric API | Tenant settings (step 2) missing or not applied yet | Check step 2; wait 15 minutes |
-| `Capacity … is not active` | Capacity paused | Resume it (step 8.3) |
+| `Capacity … is not active` | Capacity paused | Resume it (step 9.4) |
 | `WorkspaceNameAlreadyExists` | A workspace with that name already exists in the tenant | Set `workspace_name_prefix` in `infra/fabric/terraform.tfvars` |
-| `Error: building client: … use_cli` / no credentials | Step 3 not run in this terminal | Run step 3 |
+| `Error: building client: … use_cli` / no credentials | Step 4 not run in this terminal | Run step 4 |
+| Terraform asks for `git_secret` | Step 4 not run, or run with the wrong `-GitProvider` | Run step 4; don't type the secret at the prompt |
+| `The URL doesn't match git_provider` | Provider and URL disagree, or the URL has extra parts | Copy the plain repository URL (see 0.4) |
+| Git connection fails: credentials / unauthorized | GitHub: token expired or lacks Contents read/write on that repository. Azure DevOps: service principal not in the organization/project, or the organization is in another tenant | Step 3 |
+| Git connect fails: branch not found | The branch doesn't exist (empty repository) | Create the branch / make a first commit in the repository |
+| `Couldn't read secret … from Key Vault` | Wrong vault or secret name, or no access | Pass `-KeyVaultName` / `-ClientSecretName`; you need *Key Vault Secrets User* |
 | Bootstrap prompts for the service principal | ARM_/FABRIC_ variables still set | Step 1.2 |
 
 ## Removing everything
@@ -330,16 +446,17 @@ Check the expiry with `terraform output` in `infra/capacities/bootstrap`.
 Reverse order, each with the right identity. **This deletes all data.**
 
 ```powershell
-# As the service principal (step 3 loaded):
+# As the service principal (step 4 loaded):
 cd infra/fabric;      terraform destroy; cd ../..
 cd infra/capacities;  terraform destroy; cd ../..
 
-# As yourself (clear ARM_/FABRIC_ variables first, step 1.2):
+# As yourself (clear the variables first, step 1.2):
 cd infra/capacities/bootstrap; terraform destroy; cd ../../..
 ```
 
-The Key Vault is soft-deleted with purge protection: its name stays reserved for
-90 days.
+Destroying `infra/fabric` disconnects the workspaces from Git; the repository and
+its content are left untouched. The Key Vault is soft-deleted with purge
+protection: its name stays reserved for 90 days.
 
 ---
 
@@ -350,16 +467,18 @@ creates only its own part. So you can skip whatever your environment already has
 
 | You already have | Do this |
 |---|---|
-| Fabric capacities | Skip step 4. Set `capacity_name_overrides = { Dev = "<name>", Prod = "<name>" }` in `infra/fabric/terraform.tfvars`. The service principal must be **capacity admin or contributor** on them. |
-| A service principal for deployments, Key Vault and resource groups | Skip step 1. Copy `infra/platform.example.json` to `infra/platform.json` and fill in your values (`executor_client_id`, `key_vault_name`, resource groups). Load its credentials yourself in step 3 (from your vault, with your secret names). |
+| Fabric capacities | Skip step 5. Set `capacity_name_overrides = { Dev = "<name>", Prod = "<name>" }` in `infra/fabric/terraform.tfvars`. The service principal must be **capacity admin or contributor** on them. |
+| A service principal for deployments, Key Vault and resource groups | Skip step 1. Copy `infra/platform.example.json` to `infra/platform.json` and fill in your values (`tenant_id`, `executor_client_id`, `key_vault_name`, capacity names). In step 4 pass your secret's name: `. ./infra/Load-Credentials.ps1 -GitProvider … -ClientSecretName <name>`. |
 | Only some of it (e.g. a Key Vault but no service principal) | Bootstrap creates everything in one go, so either run it and accept a new vault/resource groups, or import your existing resources (below). |
-| Only want workspaces and items | Do steps 2, 3, 5–8 with an existing service principal and existing capacities. |
+| Only want workspaces and items | Do steps 2, 3, 4, 6–9 with an existing service principal and existing capacities. |
+| Only Dev (no Prod yet) | List only `Dev` under `environments` in `platform.json`. Prod can be added later without touching Dev. |
 
 What the `fabric/` part needs from your environment, however it was set up:
-- A service principal (not a user) with credentials you can load in step 3.
+- A service principal (not a user) with its secret in a Key Vault you can read.
 - That service principal in the tenant settings from step 2.
 - Running capacities where the service principal is admin or contributor.
 - Free workspace names (or a `workspace_name_prefix`).
+- The Git repository and branch from 0.3, with access from step 3.
 
 ### Adopting existing resources
 

@@ -13,10 +13,10 @@ Infrastructure as code and source control for a Microsoft Fabric data platform.
 
 ## Getting started
 
-1. **Deploy the platform** — follow [docs/terraform-setup-guide.md](docs/terraform-setup-guide.md)
-   step by step. It creates the capacities, the six workspaces and their items.
-2. **Connect the Dev workspaces to Git** (below), so notebooks, pipelines,
-   semantic models and reports are version controlled.
+**Deploy the platform** — follow [docs/terraform-setup-guide.md](docs/terraform-setup-guide.md)
+step by step. It creates the capacities, the six workspaces and their items, and
+connects the Dev workspaces to the customer's existing GitHub or Azure DevOps
+repository (it asks for the details).
 
 ## The platform
 
@@ -26,9 +26,11 @@ Infrastructure as code and source control for a Microsoft Fabric data platform.
 | ReportingHubDev / Prod | Shared semantic models on the gold layer |
 | ReportingInsightsDev / Prod | Reports on the ReportingHub semantic models |
 
-## Connecting a Fabric workspace to this repo
+## Connecting a workspace to Git by hand
 
-Connect the **Dev** workspaces; Prod is updated by deployment, not edited directly.
+Terraform connects the Dev workspaces for you. Use this only for a workspace
+Terraform doesn't manage. Connect **Dev** workspaces only; Prod is updated by
+deployment, not edited directly.
 
 1. Create a **fine-grained personal access token** on GitHub:
    Settings → Developer settings → Personal access tokens → Fine-grained tokens.

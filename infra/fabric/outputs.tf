@@ -15,6 +15,21 @@ output "orchestrator" {
   value       = var.orchestrator_admin ? coalesce(one(data.external.orchestrator[*].result.upn), local.orchestrator_object_id) : null
 }
 
+output "git" {
+  description = "Git connection per workspace."
+  value = {
+    connection_name = length(local.git_workspaces) > 0 ? local.git_connection_name : null
+    repository      = local.git_repo.url
+    branch          = var.git_branch
+    workspaces = {
+      for key, g in fabric_workspace_git.this : key => {
+        directory = g.git_provider_details.directory_name
+        state     = g.git_connection_state
+      }
+    }
+  }
+}
+
 output "lakehouses" {
   description = "Lakehouse IDs and SQL endpoint connection strings."
   value = {

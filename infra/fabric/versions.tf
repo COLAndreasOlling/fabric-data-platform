@@ -1,5 +1,6 @@
 terraform {
-  required_version = ">= 1.8"
+  # 1.10+ for ephemeral variables (git_secret never lands in state).
+  required_version = ">= 1.10"
 
   required_providers {
     fabric = {

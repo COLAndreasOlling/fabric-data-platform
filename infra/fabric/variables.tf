@@ -6,6 +6,86 @@ variable "capacity_name_overrides" {
   default     = {}
 }
 
+# --- Git integration -------------------------------------------------------------
+# No defaults on purpose: Terraform asks for these unless they're in
+# terraform.tfvars. The repository and branch must already exist.
+
+variable "git_provider" {
+  description = "Where the customer's existing repository is: GitHub or AzureDevOps."
+  type        = string
+
+  validation {
+    condition     = contains(["GitHub", "AzureDevOps"], var.git_provider)
+    error_message = "git_provider must be exactly GitHub or AzureDevOps."
+  }
+}
+
+variable "git_repository_url" {
+  description = "Full URL of the existing repository. GitHub: https://github.com/<owner>/<repo>  Azure DevOps: https://dev.azure.com/<organization>/<project>/_git/<repo>"
+  type        = string
+
+  validation {
+    condition = (
+      var.git_provider == "GitHub"
+      ? can(regex("^https://github\\.com/[^/]+/[^/]+?(\\.git)?/?$", var.git_repository_url))
+      : can(regex("^https://(?:[^@/]+@)?dev\\.azure\\.com/[^/]+/[^/]+/_git/[^/?#]+/?$", var.git_repository_url))
+    )
+    error_message = "The URL doesn't match git_provider. GitHub: https://github.com/<owner>/<repo>. Azure DevOps: https://dev.azure.com/<organization>/<project>/_git/<repo> (copy it from Repos > Clone, without trailing paths)."
+  }
+}
+
+variable "git_branch" {
+  description = "Existing branch the workspaces sync with, e.g. main. It must already exist in the repository."
+  type        = string
+
+  validation {
+    condition     = length(trimspace(var.git_branch)) > 0 && !can(regex("\\s", var.git_branch))
+    error_message = "git_branch must be a branch name without spaces, e.g. main."
+  }
+}
+
+variable "git_folder" {
+  description = "Folder in the repository for Fabric items, starting with /, e.g. /fabric. Each workspace gets a subfolder: /fabric/DataEngineering, /fabric/ReportingHub, /fabric/ReportingInsights. Use / for the repository root."
+  type        = string
+
+  validation {
+    condition     = startswith(var.git_folder, "/") && !can(regex("\\s|\\\\", var.git_folder))
+    error_message = "git_folder must start with / and contain no spaces or backslashes, e.g. /fabric."
+  }
+}
+
+variable "git_secret" {
+  description = "GitHub: personal access token with Contents read/write on the repository. Azure DevOps: the executor's client secret. Set it through TF_VAR_git_secret (infra/Load-Credentials.ps1 does this) instead of typing it."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
+variable "git_secret_version" {
+  description = "Increase by 1 when the token or secret changes, so the Fabric connection is updated with the new value."
+  type        = number
+  default     = 1
+}
+
+variable "git_environments" {
+  description = "Environments whose workspaces are connected to Git. Prod normally gets content through deployment instead."
+  type        = list(string)
+  default     = ["Dev"]
+}
+
+variable "git_initialization_strategy" {
+  description = "What wins when both the workspace and the repository folder already have content. PreferWorkspace (default) never overwrites workspace items; PreferRemote updates the workspace from Git."
+  type        = string
+  default     = "PreferWorkspace"
+
+  validation {
+    condition     = contains(["PreferWorkspace", "PreferRemote"], var.git_initialization_strategy)
+    error_message = "git_initialization_strategy must be PreferWorkspace or PreferRemote."
+  }
+}
+
+# --- Access ------------------------------------------------------------------------
+
 variable "orchestrator_admin" {
   description = "Add the person orchestrating the deployment as Admin on every workspace, so they can find and manage them. Should stay true."
   type        = bool
