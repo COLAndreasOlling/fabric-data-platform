@@ -24,7 +24,11 @@ param(
   [string] $SecretName = 'git-token',
 
   [Parameter(Mandatory = $true, HelpMessage = 'When does the token expire? (yyyy-MM-dd, as set on GitHub)')]
-  [datetime] $ExpiresOn
+  [datetime] $ExpiresOn,
+
+  # First expiry warning, in days before expiry (same as expiry_warning_days in bootstrap).
+  [ValidateRange(31, 365)]
+  [int] $WarningDays = 90
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,3 +57,16 @@ try {
 }
 
 Write-Host "Saved as secret '$SecretName' in Key Vault '$KeyVaultName' (expires $($ExpiresOn.ToString('yyyy-MM-dd')))." -ForegroundColor Green
+
+# Early warning: Key Vault alerts 30 days before a secret expires, so a reminder
+# secret that expires (WarningDays - 30) days earlier gives an alert WarningDays ahead.
+$reminderExpires = $ExpiresOn.AddDays(-($WarningDays - 30))
+if ($reminderExpires -gt (Get-Date).AddDays(30)) {
+  az keyvault secret set --vault-name $KeyVaultName --name "$SecretName-renewal-reminder" `
+    --value "$SecretName expires $($ExpiresOn.ToString('yyyy-MM-dd')). Create a new GitHub token, run infra/Save-GitToken.ps1, increase git_secret_version and apply infra/fabric." `
+    --expires ($reminderExpires.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) `
+    --content-type 'Reminder (not a credential)' -o none --only-show-errors
+  Write-Host "Expiry warnings: $($ExpiresOn.AddDays(-$WarningDays).ToString('yyyy-MM-dd')), $($ExpiresOn.AddDays(-30).ToString('yyyy-MM-dd')) and $($ExpiresOn.ToString('yyyy-MM-dd'))."
+} else {
+  Write-Host "Token expires in less than $WarningDays days - you'll be warned 30 days before and on the expiry day." -ForegroundColor Yellow
+}

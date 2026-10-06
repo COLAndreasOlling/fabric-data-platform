@@ -5,4 +5,8 @@
 # location         = "westeurope"
 # platform_version = "01"
 
+# Warned 90 days, 30 days and on the day before the client secret / GitHub token expire:
+# alert_email_addresses = "dataplatform@customer.com, you@columbusglobal.com"
+# expiry_warning_days   = 90
+
 # environments = { Dev = "d", Prod = "p" }

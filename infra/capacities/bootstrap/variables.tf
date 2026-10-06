@@ -44,6 +44,29 @@ variable "platform_version" {
   }
 }
 
+variable "alert_email_addresses" {
+  description = "Who is warned before the executor's client secret and the GitHub token expire: one or more email addresses, separated by commas (e.g. dataplatform@customer.com, consultant@columbusglobal.com). A shared mailbox is better than one person."
+  type        = string
+
+  validation {
+    condition = length(compact(split(",", var.alert_email_addresses))) > 0 && alltrue([
+      for a in compact(split(",", var.alert_email_addresses)) : can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", trimspace(a)))
+    ])
+    error_message = "Enter one or more email addresses separated by commas, e.g. dataplatform@customer.com, me@columbusglobal.com."
+  }
+}
+
+variable "expiry_warning_days" {
+  description = "Days before expiry of the first warning. Further warnings come 30 days before and on the expiry day."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.expiry_warning_days > 30 && var.expiry_warning_days <= 365
+    error_message = "expiry_warning_days must be between 31 and 365 (30 days and expiry are always warned about)."
+  }
+}
+
 variable "environments" {
   description = "Environments and their one-letter name prefix. Keys are used in workspace names (e.g. DataEngineeringDev)."
   type        = map(string)

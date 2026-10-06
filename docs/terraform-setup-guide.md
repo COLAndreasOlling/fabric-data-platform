@@ -80,6 +80,7 @@ so it's easiest to put them in `terraform.tfvars` files as you go.
 | Step 1 | `company_code` | `cg` | Becomes `p-cg-we-dp-01-da` |
 | Step 1 | `location` | `westeurope` | `we` in names; the Azure region |
 | Step 1 | `platform_version` | `01` | `…-dp-01-…` |
+| Step 1 | `alert_email_addresses` | `dataplatform@customer.com, you@columbusglobal.com` | Warned 90 days, 30 days and on the day before the service principal's secret or the GitHub token expires. Use a shared mailbox that someone reads |
 | Step 6 | `git_provider` | `GitHub` or `AzureDevOps` | Exactly as written |
 | Step 6 | `git_repository_url` | `https://github.com/contoso/fabric` | Copy from the browser / Clone button |
 | Step 6 | `git_branch` | `main` | Must already exist |
@@ -123,17 +124,18 @@ Remove-Item Env:ARM_*, Env:FABRIC_*, Env:TF_VAR_git_secret -ErrorAction Silently
 ```powershell
 cd infra/capacities/bootstrap
 Copy-Item terraform.tfvars.example terraform.tfvars
-notepad terraform.tfvars        # fill in the four values from 0.4, remove the #
+notepad terraform.tfvars        # fill in the five step-1 values from 0.4, remove the #
 terraform init
 terraform plan
 ```
 
-(Without `terraform.tfvars`, Terraform asks for the four values instead.)
+(Without `terraform.tfvars`, Terraform asks for the five values instead.)
 
-Read the plan — you should see **19 resources to add**: an application, service
+Read the plan — you should see **22 resources to add**: an application, service
 principal, two federated credentials, a password, a group, two resource groups,
-three role assignments, a Key Vault, three secrets, a wait timer, a rotation timer
-and `platform.json`. Nothing should be changed or destroyed.
+three role assignments, a Key Vault, four secrets (one is the renewal reminder),
+an action group, an Event Grid system topic and its alert subscription, a wait
+timer, a rotation timer and `platform.json`. Nothing should be changed or destroyed.
 
 ```powershell
 terraform apply
@@ -148,8 +150,11 @@ permissions).
 terraform output
 ```
 
-You'll see the generated names, the service principal's client ID, the secret's
-expiry date and the Key Vault name.
+You'll see the generated names, the service principal's client ID, the Key Vault
+name and `expiry_warnings`: who's warned, when the secret expires and the date of
+the first warning. Each address in the action group gets a confirmation email
+from Azure Monitor ("You've been added to an action group") — that's how you know
+the addresses are right.
 
 In the **Entra admin center → App registrations → `<company>-<region>-dp-<version>-da-sp-terraform`**:
 - *Owners*: you (and anyone in `additional_owners`).
@@ -424,14 +429,50 @@ Azure portal.) Terraform needs the capacities **running** to deploy.
 4. `terraform apply`.
 5. Commit the `.tf` changes (never state or `terraform.tfvars`).
 
-## Rotating secrets
+## Expiring credentials and warnings
 
-- **Executor client secret** (730 days): run step 1.3 again as yourself — after the
-  rotation date it creates a new secret and updates Key Vault. For Azure DevOps, then
-  increase `git_secret_version` in `infra/fabric/terraform.tfvars` and apply, so the
-  Git connection gets the new secret.
-- **GitHub token**: create a new one, run `./infra/Save-GitToken.ps1`, increase
-  `git_secret_version` and apply.
+The service principal itself doesn't expire — its **client secret** does (730
+days), and so does the **GitHub token** (whatever was set on GitHub).
+
+### What stops working when they expire
+
+| Expired | Stops | Keeps working |
+|---|---|---|
+| Executor client secret | Terraform runs (can't sign in). With **Azure DevOps**: the workspaces' Git connection, so Source control can't commit or update. | Workspaces, lakehouse, warehouses and the data in them. Items owned by the service principal (e.g. scheduled pipelines) are run by Fabric under the service principal's identity without using its secret — verify this for your item types before relying on it. A **deleted or disabled** service principal does break them, so never delete it. |
+| GitHub token | The workspaces' Git connection (GitHub) | Everything else |
+
+### How you're warned
+
+Key Vault raises an event 30 days before a secret expires and on the expiry day;
+Event Grid turns these into Azure Monitor alerts emailed to `alert_email_addresses`.
+For an earlier warning, each credential has a *renewal reminder* secret that
+expires earlier, giving a first email `expiry_warning_days` (default **90**) days ahead:
+
+| When | Email about |
+|---|---|
+| 90 days before | `executor-client-secret-renewal-reminder` / `git-token-renewal-reminder` is "near expiry" — time to plan the renewal |
+| 30 days before | `executor-client-secret` / `git-token` is near expiry |
+| On the day | It has expired |
+
+The alerts are also visible in the Azure portal under **Monitor → Alerts**.
+Change the recipients in `infra/capacities/bootstrap/terraform.tfvars` and run
+bootstrap again.
+
+> Key Vault only raises these events for secrets written *after* the alert
+> subscription exists. Bootstrap takes care of the order; if you add secrets to
+> the vault by hand, add them afterwards (or write a new version).
+
+### Renewing
+
+- **Executor client secret**: run step 1.3 again as yourself — after the rotation
+  date it creates a new secret and updates Key Vault and the reminder. To renew
+  **early** (e.g. after the 90-day warning), force it:
+  `terraform apply -replace="time_rotating.client_secret"`. For Azure DevOps, then
+  increase `git_secret_version` in `infra/fabric/terraform.tfvars`, load the
+  credentials (step 4) and apply `infra/fabric`, so the Git connection gets the
+  new secret.
+- **GitHub token**: create a new one, run `./infra/Save-GitToken.ps1` (it also
+  updates the reminder), increase `git_secret_version` and apply `infra/fabric`.
 
 ## Troubleshooting
 

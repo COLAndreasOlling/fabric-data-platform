@@ -8,7 +8,7 @@ Three Terraform configurations, each with its own state, run in this order:
 
 | # | Folder | Creates | Runs as |
 |---|---|---|---|
-| 1 | `capacities/bootstrap/` | Executor app registration + service principal, GitHub OIDC trust, security group, resource groups, Contributor roles, Key Vault with the executor's credentials, `platform.json` | **You** (`az login`) - once, and again to rotate the secret |
+| 1 | `capacities/bootstrap/` | Executor app registration + service principal, GitHub OIDC trust, security group, resource groups, Contributor roles, Key Vault with the executor's credentials, expiry email alerts, `platform.json` | **You** (`az login`) - once, and again to rotate the secret |
 | 2 | `capacities/` | Fabric capacities (Dev, Prod) | Executor service principal |
 | 3 | `fabric/` | 6 workspaces, lakehouse, warehouses, workspace identities, cross-workspace access, Git connection for the Dev workspaces | Executor service principal |
 
@@ -96,6 +96,19 @@ The **Dev** workspaces are connected to the customer's existing repository
 |---|---|
 | `. ./infra/Load-Credentials.ps1 -GitProvider <GitHub\|AzureDevOps>` | Checks you're signed in to the tenant in `platform.json`, loads the executor's credentials and `TF_VAR_git_secret` from Key Vault into the session. Parameters for existing environments: `-KeyVaultName`, `-ClientSecretName`, `-GitTokenSecretName`. |
 | `./infra/Save-GitToken.ps1` | Asks for a GitHub token (hidden) and its expiry date and stores it in Key Vault as `git-token`. |
+
+## Expiry warnings
+
+Bootstrap sets up email alerts for every secret in the Key Vault with an expiry
+date (the executor's client secret, the GitHub token): **90 days** before
+(`expiry_warning_days`, through a renewal-reminder secret), **30 days** before and
+**on the day**, to `alert_email_addresses`. Built from Key Vault events → Event
+Grid system topic → Azure Monitor alert → action group (`azapi`, since azurerm
+has no Monitor-alert destination). Details and what breaks on expiry: see the
+guide, *Expiring credentials and warnings*.
+
+Existing environments without bootstrap don't get these alerts automatically —
+set up the same Event Grid subscription on your vault, or add a calendar reminder.
 
 ## Ownership and admin rights
 

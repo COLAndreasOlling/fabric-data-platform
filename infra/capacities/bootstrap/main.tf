@@ -154,13 +154,83 @@ resource "time_sleep" "key_vault_rbac" {
   depends_on      = [azurerm_role_assignment.bootstrap_secrets_officer]
 }
 
+# --- Expiry warnings -------------------------------------------------------------
+# Key Vault raises SecretNearExpiry 30 days before a secret expires and
+# SecretExpired on the day; Event Grid turns them into Azure Monitor alerts that
+# email alert_email_addresses. This covers every secret in the vault with an
+# expiry date: the executor's client secret and the GitHub token
+# (Save-GitToken.ps1). For an earlier warning, a reminder secret per credential
+# expires (expiry_warning_days - 30) days before the real one, so its "near
+# expiry" alert arrives expiry_warning_days ahead.
+#
+# Key Vault only raises these events for secret versions written after the
+# subscription exists - so all secrets below depend on it.
+
+resource "azurerm_monitor_action_group" "expiry" {
+  name                = "${local.platform_name}-ag-secret-expiry"
+  resource_group_name = azurerm_resource_group.this[var.key_vault_environment].name
+  short_name          = "secexpiry"
+  tags                = local.tags
+
+  dynamic "email_receiver" {
+    for_each = toset([for a in compact(split(",", var.alert_email_addresses)) : lower(trimspace(a))])
+    content {
+      name                    = email_receiver.value
+      email_address           = email_receiver.value
+      use_common_alert_schema = true
+    }
+  }
+}
+
+resource "azurerm_eventgrid_system_topic" "key_vault" {
+  name                = "${local.key_vault_name}-events"
+  resource_group_name = azurerm_resource_group.this[var.key_vault_environment].name
+  location            = local.location
+  source_resource_id  = azurerm_key_vault.this.id
+  topic_type          = "Microsoft.KeyVault.vaults"
+  tags                = local.tags
+}
+
+resource "azapi_resource" "expiry_alerts" {
+  type      = "Microsoft.EventGrid/systemTopics/eventSubscriptions@2025-02-15"
+  name      = "secret-expiry-alerts"
+  parent_id = azurerm_eventgrid_system_topic.key_vault.id
+
+  body = {
+    properties = {
+      destination = {
+        endpointType = "MonitorAlert"
+        properties = {
+          severity     = "Sev2"
+          description  = "A secret in ${local.key_vault_name} is about to expire or has expired. See docs/terraform-setup-guide.md, 'Rotating secrets'."
+          actionGroups = [azurerm_monitor_action_group.expiry.id]
+        }
+      }
+      filter = {
+        includedEventTypes = ["Microsoft.KeyVault.SecretNearExpiry", "Microsoft.KeyVault.SecretExpired"]
+      }
+      eventDeliverySchema = "EventGridSchema"
+    }
+  }
+}
+
 resource "azurerm_key_vault_secret" "client_secret" {
   name            = "executor-client-secret"
   value           = azuread_application_password.executor.value
   content_type    = "Client secret for ${local.executor_name}"
   expiration_date = azuread_application_password.executor.end_date
   key_vault_id    = azurerm_key_vault.this.id
-  depends_on      = [time_sleep.key_vault_rbac]
+  depends_on      = [time_sleep.key_vault_rbac, azapi_resource.expiry_alerts]
+}
+
+# Exists only to trigger the early warning; the value is a reminder text.
+resource "azurerm_key_vault_secret" "client_secret_reminder" {
+  name            = "executor-client-secret-renewal-reminder"
+  value           = "executor-client-secret expires ${azuread_application_password.executor.end_date}. Renew it by running infra/capacities/bootstrap again - see docs/terraform-setup-guide.md, 'Rotating secrets'."
+  content_type    = "Reminder (not a credential)"
+  expiration_date = timeadd(azuread_application_password.executor.end_date, "-${(var.expiry_warning_days - 30) * 24}h")
+  key_vault_id    = azurerm_key_vault.this.id
+  depends_on      = [time_sleep.key_vault_rbac, azapi_resource.expiry_alerts]
 }
 
 resource "azurerm_key_vault_secret" "client_id" {

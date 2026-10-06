@@ -18,5 +18,9 @@ provider "azurerm" {
 
   # Register only what this platform needs.
   resource_provider_registrations = "none"
-  resource_providers_to_register  = ["Microsoft.Fabric", "Microsoft.KeyVault"]
+  resource_providers_to_register  = ["Microsoft.Fabric", "Microsoft.KeyVault", "Microsoft.EventGrid", "Microsoft.Insights"]
+}
+
+provider "azapi" {
+  subscription_id = var.subscription_id
 }

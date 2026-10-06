@@ -10,6 +10,11 @@ terraform {
       source  = "hashicorp/azurerm"
       version = ">= 4.0"
     }
+    # Event Grid -> Azure Monitor alert destination isn't in azurerm yet.
+    azapi = {
+      source  = "azure/azapi"
+      version = ">= 2.0"
+    }
     local = {
       source  = "hashicorp/local"
       version = ">= 2.4"
