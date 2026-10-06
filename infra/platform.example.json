@@ -1,0 +1,17 @@
+{
+  "subscription_id": "00000000-0000-0000-0000-000000000000",
+  "tenant_id": "00000000-0000-0000-0000-000000000000",
+  "location": "westeurope",
+  "executor_client_id": "00000000-0000-0000-0000-000000000000",
+  "key_vault_name": "p-cg-we-dp-01-da-kv",
+  "environments": {
+    "Dev": {
+      "resource_group": "d-cg-we-dp-01-da",
+      "capacity_name": "dcgwedp01dafab"
+    },
+    "Prod": {
+      "resource_group": "p-cg-we-dp-01-da",
+      "capacity_name": "pcgwedp01dafab"
+    }
+  }
+}

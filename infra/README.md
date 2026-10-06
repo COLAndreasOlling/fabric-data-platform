@@ -1,5 +1,9 @@
 # Infrastructure as code
 
+> **Deploying?** Follow the step-by-step [Terraform setup guide](../docs/terraform-setup-guide.md).
+> This page is the reference: what gets created, naming, ownership and limits.
+> Have an existing environment? See [Using an existing environment](../docs/terraform-setup-guide.md#using-an-existing-environment).
+
 Three Terraform configurations, each with its own state, run in this order:
 
 | # | Folder | Creates | Runs as |
@@ -9,7 +13,8 @@ Three Terraform configurations, each with its own state, run in this order:
 | 3 | `fabric/` | 6 workspaces, lakehouse, warehouses, workspace identities, cross-workspace access | Executor service principal |
 
 `infra/platform.json` is written by bootstrap and read by the other two. It holds
-names and IDs only (no secrets) and should be committed.
+names and IDs only (no secrets) and should be committed. Without bootstrap (existing
+environment), create it by hand from `platform.example.json`.
 
 ## Naming
 
