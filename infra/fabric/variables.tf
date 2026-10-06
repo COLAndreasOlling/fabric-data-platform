@@ -110,10 +110,23 @@ variable "workspace_name_prefix" {
   default     = ""
 }
 
-variable "lakehouses" {
-  description = "Lakehouses created in each DataEngineering workspace."
+variable "data_engineering_folders" {
+  description = "Workspace folders created in each DataEngineering workspace. 400_DataTransformation holds pipelines, notebooks, copy jobs etc. (created in Fabric, synced through Git)."
   type        = list(string)
-  default     = ["LH_Bronze"]
+  default     = ["100_Bronze", "200_Silver", "300_Gold", "400_DataTransformation"]
+}
+
+variable "lakehouses" {
+  description = "Lakehouses created in each DataEngineering workspace: name => folder (one of data_engineering_folders, or null for the workspace root)."
+  type        = map(string)
+  default = {
+    LH_Bronze = "100_Bronze"
+  }
+
+  validation {
+    condition     = alltrue([for folder in values(var.lakehouses) : folder == null || contains(var.data_engineering_folders, folder)])
+    error_message = "Every lakehouse folder must be one of data_engineering_folders (or null)."
+  }
 }
 
 variable "lakehouse_enable_schemas" {
@@ -123,9 +136,18 @@ variable "lakehouse_enable_schemas" {
 }
 
 variable "warehouses" {
-  description = "Warehouses created in each DataEngineering workspace."
-  type        = list(string)
-  default     = ["WH_Silver_Sources", "WH_Silver_Models", "WH_Gold_DataEstate"]
+  description = "Warehouses created in each DataEngineering workspace: name => folder (one of data_engineering_folders, or null for the workspace root)."
+  type        = map(string)
+  default = {
+    WH_Silver_Sources  = "200_Silver"
+    WH_Silver_Models   = "200_Silver"
+    WH_Gold_DataEstate = "300_Gold"
+  }
+
+  validation {
+    condition     = alltrue([for folder in values(var.warehouses) : folder == null || contains(var.data_engineering_folders, folder)])
+    error_message = "Every warehouse folder must be one of data_engineering_folders (or null)."
+  }
 }
 
 variable "workspace_collation_confirmed" {

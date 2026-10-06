@@ -22,7 +22,7 @@ repository (it asks for the details).
 
 | Workspace | Purpose |
 |---|---|
-| DataEngineeringDev / Prod | `LH_Bronze`, `WH_Silver_Sources`, `WH_Silver_Models`, `WH_Gold_DataEstate` |
+| DataEngineeringDev / Prod | `100_Bronze/LH_Bronze`, `200_Silver/WH_Silver_Sources`, `200_Silver/WH_Silver_Models`, `300_Gold/WH_Gold_DataEstate`, `400_DataTransformation/` for pipelines and notebooks |
 | ReportingHubDev / Prod | Shared semantic models on the gold layer |
 | ReportingInsightsDev / Prod | Reports on the ReportingHub semantic models |
 

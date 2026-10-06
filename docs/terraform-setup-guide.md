@@ -304,7 +304,9 @@ terraform plan
 
 Check the plan:
 - The first lines show `orchestrator = "<your UPN>"` — that's you, made Admin on every workspace.
-- **Add**: 6 workspaces, 6 warehouses, 10 role assignments (4 cross-workspace,
+- A **warning** about *'Folder' preview mode*. That's expected.
+- **Add**: 6 workspaces, 8 folders (`100_Bronze` … `400_DataTransformation` in
+  both DataEngineering workspaces), 6 warehouses, 10 role assignments (4 cross-workspace,
   6 for you), 1 Git connection, 1 connection role assignment,
   `terraform_data.git_folders` (creates missing folders in the repository) and
   3 workspace Git connections (the Dev workspaces).
@@ -363,8 +365,9 @@ cd ../..
 ### 9.1 Workspaces and access
 
 - Six workspaces exist, each on the right capacity (Workspace settings → License info).
-- **DataEngineering** workspaces contain `LH_Bronze`, `WH_Silver_Sources`,
-  `WH_Silver_Models`, `WH_Gold_DataEstate`.
+- **DataEngineering** workspaces contain the folders `100_Bronze` (`LH_Bronze`),
+  `200_Silver` (`WH_Silver_Sources`, `WH_Silver_Models`), `300_Gold`
+  (`WH_Gold_DataEstate`) and an empty `400_DataTransformation`.
 - **Manage access** on DataEngineeringDev shows the service principal (Admin),
   you (Admin), any groups you added and `ReportingHubDev`'s workspace identity
   (Viewer).

@@ -35,7 +35,7 @@ abbreviations are in `capacities/bootstrap/main.tf` (`westeurope` = `we`).
 
 | Workspace | Items |
 |---|---|
-| DataEngineeringDev / DataEngineeringProd | `LH_Bronze` (lakehouse, schemas enabled), `WH_Silver_Sources`, `WH_Silver_Models`, `WH_Gold_DataEstate` |
+| DataEngineeringDev / DataEngineeringProd | Folders `100_Bronze` (`LH_Bronze`, lakehouse with schemas), `200_Silver` (`WH_Silver_Sources`, `WH_Silver_Models`), `300_Gold` (`WH_Gold_DataEstate`), `400_DataTransformation` (empty — for pipelines, notebooks, copy jobs) |
 | ReportingHubDev / ReportingHubProd | Nothing - semantic models come from Git / deployment |
 | ReportingInsightsDev / ReportingInsightsProd | Nothing - reports come from Git / deployment |
 
@@ -48,6 +48,12 @@ Cross-workspace access, within the same environment only:
 | ReportingInsights | Viewer | ReportingHub (use the semantic models) |
 
 Change this with the `cross_workspace_access` variable. Dev identities never get access to Prod.
+
+Folders and item placement are set by `data_engineering_folders`, `lakehouses`
+and `warehouses` (item name => folder). Moving an item to another folder is an
+in-place update — the item and its data are kept. Folders are a **preview**
+resource in the Fabric provider, so `preview = true` is set in `providers.tf`
+and every plan shows a preview warning.
 
 ## Git integration
 

@@ -9,4 +9,7 @@
 provider "fabric" {
   use_cli     = false
   use_dev_cli = false
+
+  # Workspace folders (fabric_folder) are a preview resource in the provider.
+  preview = true
 }

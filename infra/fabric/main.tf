@@ -30,15 +30,22 @@ locals {
     for key, ws in local.workspaces : key => ws if ws.type == "DataEngineering"
   }
 
+  # Workspace folders, e.g. "DataEngineeringDev/100_Bronze".
+  data_engineering_folders = merge([
+    for ws_key, ws in local.data_engineering_workspaces : {
+      for folder in var.data_engineering_folders : "${ws_key}/${folder}" => { workspace_key = ws_key, name = folder }
+    }
+  ]...)
+
   lakehouses = merge([
     for ws_key, ws in local.data_engineering_workspaces : {
-      for name in var.lakehouses : "${ws_key}/${name}" => { workspace_key = ws_key, name = name }
+      for name, folder in var.lakehouses : "${ws_key}/${name}" => { workspace_key = ws_key, name = name, folder = folder }
     }
   ]...)
 
   warehouses = merge([
     for ws_key, ws in local.data_engineering_workspaces : {
-      for name in var.warehouses : "${ws_key}/${name}" => { workspace_key = ws_key, name = name }
+      for name, folder in var.warehouses : "${ws_key}/${name}" => { workspace_key = ws_key, name = name, folder = folder }
     }
   ]...)
 
@@ -106,11 +113,19 @@ check "workspace_collation" {
   }
 }
 
+resource "fabric_folder" "data_engineering" {
+  for_each = local.data_engineering_folders
+
+  display_name = each.value.name
+  workspace_id = fabric_workspace.this[each.value.workspace_key].id
+}
+
 resource "fabric_lakehouse" "this" {
   for_each = { for key, lh in local.lakehouses : key => lh if var.workspace_collation_confirmed }
 
   display_name = each.value.name
   workspace_id = fabric_workspace.this[each.value.workspace_key].id
+  folder_id    = each.value.folder == null ? null : fabric_folder.data_engineering["${each.value.workspace_key}/${each.value.folder}"].id
 
   configuration = {
     enable_schemas = var.lakehouse_enable_schemas
@@ -122,6 +137,7 @@ resource "fabric_warehouse" "this" {
 
   display_name = each.value.name
   workspace_id = fabric_workspace.this[each.value.workspace_key].id
+  folder_id    = each.value.folder == null ? null : fabric_folder.data_engineering["${each.value.workspace_key}/${each.value.folder}"].id
 
   configuration = {
     collation_type = var.warehouse_collation
