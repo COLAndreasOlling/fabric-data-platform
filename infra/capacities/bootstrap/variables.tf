@@ -1,34 +1,88 @@
+# The first four variables have no default, so Terraform prompts for them.
+# To skip the prompts, put them in terraform.tfvars (see terraform.tfvars.example).
+
 variable "subscription_id" {
-  description = "Azure subscription that hosts the Fabric capacities."
+  description = "Azure subscription ID that hosts the platform (GUID)."
   type        = string
+
+  validation {
+    condition     = can(regex("^[0-9a-fA-F-]{36}$", var.subscription_id))
+    error_message = "subscription_id must be a GUID, e.g. 00000000-0000-0000-0000-000000000000."
+  }
+}
+
+variable "company_code" {
+  description = "Company indicator, 2-4 letters (e.g. cg for Columbus Global)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-zA-Z]{2,4}$", var.company_code))
+    error_message = "company_code must be 2-4 letters, e.g. cg."
+  }
 }
 
 variable "location" {
-  description = "Azure region for the capacity resource group."
+  description = "Azure region (e.g. westeurope, northeurope, swedencentral)."
   type        = string
-  default     = "westeurope"
+
+  validation {
+    condition = contains([
+      "westeurope", "northeurope", "swedencentral", "norwayeast", "denmarkeast",
+      "germanywestcentral", "francecentral", "uksouth", "eastus", "eastus2", "westus2",
+    ], lower(var.location))
+    error_message = "Unsupported location. Use e.g. westeurope, northeurope or swedencentral (or add it to region_abbreviations in main.tf)."
+  }
 }
 
-variable "resource_group_name" {
-  description = "Resource group for the capacities. Created here; the executor gets Contributor on it."
+variable "platform_version" {
+  description = "Platform version, two digits (e.g. 01)."
   type        = string
-  default     = "rg-fabric-capacities"
+
+  validation {
+    condition     = can(regex("^[0-9]{2}$", var.platform_version))
+    error_message = "platform_version must be two digits, e.g. 01."
+  }
 }
 
-variable "executor_name" {
-  description = "Display name of the app registration / service principal that runs Terraform."
-  type        = string
-  default     = "sp-fabric-terraform"
+variable "environments" {
+  description = "Environments and their one-letter name prefix. Keys are used in workspace names (e.g. DataEngineeringDev)."
+  type        = map(string)
+  default = {
+    Dev  = "d"
+    Prod = "p"
+  }
+
+  validation {
+    condition     = alltrue([for letter in values(var.environments) : can(regex("^[a-z]$", letter))])
+    error_message = "Each environment prefix must be a single lowercase letter."
+  }
 }
 
-variable "executor_group_name" {
-  description = "Security group containing the executor. Used to scope Fabric tenant settings."
+variable "key_vault_environment" {
+  description = "Environment whose resource group holds the Key Vault with the executor's credentials."
   type        = string
-  default     = "sg-fabric-terraform-executors"
+  default     = "Prod"
 }
 
-variable "entra_owners" {
-  description = "Object IDs set as owners of the app registration, service principal and group. Empty keeps them ownerless (manage them with the Application/Groups Administrator role)."
+variable "key_vault_purge_protection" {
+  description = "Enable purge protection on the Key Vault. Recommended; note it can't be turned off again and a deleted vault name stays reserved for the retention period."
+  type        = bool
+  default     = true
+}
+
+variable "client_secret_validity_days" {
+  description = "Client secret lifetime in days. 730 (2 years) is the maximum Entra allows in the portal and the default here; re-running bootstrap after expiry rotates it."
+  type        = number
+  default     = 730
+
+  validation {
+    condition     = var.client_secret_validity_days >= 1 && var.client_secret_validity_days <= 730
+    error_message = "client_secret_validity_days must be between 1 and 730."
+  }
+}
+
+variable "additional_owners" {
+  description = "Extra object IDs (users or service principals) to add as owners of the app registration, service principal and group. The person running bootstrap is always an owner - required with the Application Developer role."
   type        = list(string)
   default     = []
 }
@@ -43,31 +97,4 @@ variable "github_subjects" {
   description = "GitHub OIDC subjects (after \"repo:<owner>/<name>:\") that may sign in, e.g. a branch, pull requests or an environment."
   type        = list(string)
   default     = ["ref:refs/heads/main", "pull_request"]
-}
-
-variable "create_client_secret" {
-  description = "Create a client secret for local runs. Not needed for GitHub Actions (OIDC)."
-  type        = bool
-  default     = true
-}
-
-variable "client_secret_validity" {
-  description = "How long the client secret is valid, as a duration (e.g. 720h = 30 days)."
-  type        = string
-  default     = "2160h"
-}
-
-variable "manage_fabric_tenant_settings" {
-  description = "Add the executor group to the Fabric tenant settings below. Requires the Fabric Administrator role. Existing groups are kept; settings already enabled for the whole organization are left alone."
-  type        = bool
-  default     = false
-}
-
-variable "fabric_tenant_settings" {
-  description = "Fabric tenant settings (API names) the executor group needs."
-  type        = list(string)
-  default = [
-    "ServicePrincipalAccessGlobalAPIs",     # Service principals can create workspaces, connections, and deployment pipelines
-    "ServicePrincipalAccessPermissionAPIs", # Service principals can call Fabric public APIs
-  ]
 }

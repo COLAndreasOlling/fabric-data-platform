@@ -8,10 +8,10 @@
 provider "azurerm" {
   features {}
 
-  subscription_id = var.subscription_id
+  subscription_id = local.platform.subscription_id
   use_cli         = false
 
-  # The executor only has Contributor on the resource group, so it can't
+  # The executor only has Contributor on the resource groups, so it can't
   # register resource providers - bootstrap/ registers Microsoft.Fabric.
   resource_provider_registrations = "none"
 }

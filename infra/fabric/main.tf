@@ -1,4 +1,13 @@
 locals {
+  # Written by ../capacities/bootstrap.
+  platform = jsondecode(file("${path.module}/../platform.json"))
+
+  environments = {
+    for env, e in local.platform.environments : env => {
+      capacity_name = lookup(var.capacity_name_overrides, env, e.capacity_name)
+    }
+  }
+
   workspace_types = {
     DataEngineering   = "Lakehouse and warehouses for ingestion and modelling (bronze, silver, gold)."
     ReportingHub      = "Shared semantic models built on the gold layer."
@@ -8,7 +17,7 @@ locals {
   # One workspace per type and environment, keyed by its name without prefix,
   # e.g. "DataEngineeringDev".
   workspaces = merge([
-    for env, cfg in var.environments : {
+    for env, cfg in local.environments : {
       for type, description in local.workspace_types : "${type}${env}" => {
         type        = type
         env         = env
@@ -36,7 +45,7 @@ locals {
   # Workspace identity of <source><env> gets <role> on <target><env>.
   # Access never crosses environments.
   cross_workspace_access = merge([
-    for env in keys(var.environments) : {
+    for env in keys(local.environments) : {
       for a in var.cross_workspace_access : "${a.target}${env}/${a.source}${env}" => {
         target_key = "${a.target}${env}"
         source_key = "${a.source}${env}"
@@ -46,7 +55,7 @@ locals {
   ]...)
 
   additional_role_assignments = merge([
-    for env in keys(var.environments) : {
+    for env in keys(local.environments) : {
       for a in var.additional_role_assignments : "${a.workspace_type}${env}/${a.principal_id}" => {
         workspace_key  = "${a.workspace_type}${env}"
         principal_id   = a.principal_id
@@ -58,7 +67,7 @@ locals {
 }
 
 data "fabric_capacity" "this" {
-  for_each = var.environments
+  for_each = local.environments
 
   display_name = each.value.capacity_name
 
@@ -93,7 +102,7 @@ resource "fabric_workspace" "this" {
 check "workspace_collation" {
   assert {
     condition     = var.workspace_collation_confirmed
-    error_message = "Lakehouses are skipped. Set Workspace settings > Data Warehouse > Collations to 'Case insensitive' in each workspace, then re-run with workspace_collation_confirmed = true."
+    error_message = "Lakehouses are skipped. In each DataEngineering workspace set Workspace settings > Data Warehouse > Collations to 'Case insensitive', then re-run with workspace_collation_confirmed = true."
   }
 }
 

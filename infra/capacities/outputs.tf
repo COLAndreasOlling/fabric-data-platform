@@ -1,9 +1,10 @@
 output "capacities" {
-  description = "Capacity names to use as capacity_name in ../fabric."
+  description = "Fabric capacities per environment."
   value = {
-    for key, c in azurerm_fabric_capacity.this : key => {
-      id   = c.id
-      name = c.name
+    for env, c in azurerm_fabric_capacity.this : env => {
+      id             = c.id
+      name           = c.name
+      resource_group = c.resource_group_name
     }
   }
 }

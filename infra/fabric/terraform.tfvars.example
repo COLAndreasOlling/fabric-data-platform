@@ -1,10 +1,11 @@
 # Copy to terraform.tfvars and adjust. All values below are optional -
-# the defaults in variables.tf create the six workspaces as designed.
+# capacity names come from ../platform.json (written by bootstrap).
 
-# environments = {
-#   Dev  = { capacity_name = "fcdataplatformdev" }
-#   Prod = { capacity_name = "fcdataplatformprod" }
-# }
+# Second pass, after setting the DataEngineering workspaces to case insensitive:
+# workspace_collation_confirmed = true
+
+# Use an existing capacity instead of the generated one:
+# capacity_name_overrides = { Dev = "mytrialcapacity" }
 
 # workspace_name_prefix = "Contoso-"
 

@@ -1,12 +1,9 @@
-variable "environments" {
-  description = "Environments to deploy, keyed by the suffix used in workspace names. capacity_name is the Fabric capacity display name (see ../capacities)."
-  type = map(object({
-    capacity_name = string
-  }))
-  default = {
-    Dev  = { capacity_name = "fcdataplatformdev" }
-    Prod = { capacity_name = "fcdataplatformprod" }
-  }
+# Environments and capacity names come from ../platform.json (written by
+# ../capacities/bootstrap). Override a capacity here to use an existing one.
+variable "capacity_name_overrides" {
+  description = "Use an existing Fabric capacity for an environment, e.g. { Dev = \"mytrialcapacity\" }."
+  type        = map(string)
+  default     = {}
 }
 
 variable "workspace_name_prefix" {
@@ -34,7 +31,7 @@ variable "warehouses" {
 }
 
 variable "workspace_collation_confirmed" {
-  description = "Set to true once every workspace's Data Warehouse collation is set to case insensitive in the Fabric portal. Lakehouses are only created after that, because their SQL analytics endpoint takes the workspace collation at creation and can't be changed later."
+  description = "Set to true once the Data Warehouse collation of each DataEngineering workspace is set to case insensitive in the Fabric portal. Lakehouses are only created after that, because their SQL analytics endpoint takes the workspace collation at creation and can't be changed later."
   type        = bool
   default     = false
 }

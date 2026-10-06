@@ -1,16 +1,67 @@
 data "azuread_client_config" "current" {}
 
+# --- Naming --------------------------------------------------------------------
+# <env>-<company>-<region>-dp-<version>-da[-<resource>], e.g.
+#   p-cg-we-dp-01-da      resource group
+#   p-cg-we-dp-01-da-kv   key vault
+#   pcgwedp01dafab        Fabric capacity (Azure allows only lowercase letters
+#                         and digits in capacity names, so hyphens are dropped)
+
+locals {
+  region_abbreviations = {
+    westeurope         = "we"
+    northeurope        = "ne"
+    swedencentral      = "sc"
+    norwayeast         = "no"
+    denmarkeast        = "dk"
+    germanywestcentral = "gw"
+    francecentral      = "fc"
+    uksouth            = "uks"
+    eastus             = "eus"
+    eastus2            = "eus2"
+    westus2            = "wus2"
+  }
+
+  location = lower(var.location)
+  company  = lower(var.company_code)
+  region   = local.region_abbreviations[local.location]
+
+  # Shared, environment-less part, used for the executor identity.
+  platform_name = "${local.company}-${local.region}-dp-${var.platform_version}-da"
+
+  environments = {
+    for env, letter in var.environments : env => {
+      resource_group = "${letter}-${local.platform_name}"
+      capacity_name  = replace("${letter}-${local.platform_name}-fab", "-", "")
+    }
+  }
+
+  key_vault_name = "${local.environments[var.key_vault_environment].resource_group}-kv"
+  executor_name  = "${local.platform_name}-sp-terraform"
+  group_name     = "${local.platform_name}-sg-terraform-executors"
+
+  owners = distinct(concat([data.azuread_client_config.current.object_id], var.additional_owners))
+
+  tags = {
+    workload   = "fabric-data-platform"
+    managed_by = "terraform"
+  }
+}
+
 # --- Executor identity ---------------------------------------------------------
+# The person running bootstrap stays owner of these Entra objects: with the
+# Application Developer role you can only manage apps you own. Fabric items and
+# capacities are created by the service principal, never by a person.
 
 resource "azuread_application" "executor" {
-  display_name     = var.executor_name
+  display_name     = local.executor_name
   sign_in_audience = "AzureADMyOrg"
-  owners           = var.entra_owners
+  owners           = local.owners
 }
 
 resource "azuread_service_principal" "executor" {
   client_id = azuread_application.executor.client_id
-  owners    = var.entra_owners
+  owners    = local.owners
 }
 
 # GitHub Actions signs in without a stored secret.
@@ -24,74 +75,121 @@ resource "azuread_application_federated_identity_credential" "github" {
   subject        = "repo:${var.github_repository}:${each.value}"
 }
 
-# For local runs only. The value ends up in this configuration's state file,
-# which is git-ignored - keep it that way.
-resource "azuread_application_password" "local" {
-  count = var.create_client_secret ? 1 : 0
-
-  application_id    = azuread_application.executor.id
-  display_name      = "local-terraform"
-  end_date_relative = var.client_secret_validity
+# Client secret for local runs. Re-running bootstrap after it expires creates a
+# new one and updates Key Vault.
+resource "time_rotating" "client_secret" {
+  rotation_days = var.client_secret_validity_days
 }
 
-resource "azuread_group" "executors" {
-  display_name     = var.executor_group_name
-  description      = "Identities allowed to deploy the Fabric data platform. Used to scope Fabric tenant settings."
-  security_enabled = true
-  owners           = var.entra_owners
-  members          = [azuread_service_principal.executor.object_id]
-}
+resource "azuread_application_password" "executor" {
+  application_id = azuread_application.executor.id
+  display_name   = "terraform-${formatdate("YYYY-MM-DD", time_rotating.client_secret.rfc3339)}"
+  end_date       = time_rotating.client_secret.rotation_rfc3339
 
-# --- Azure: resource group for the capacities --------------------------------
-
-resource "azurerm_resource_group" "capacities" {
-  name     = var.resource_group_name
-  location = var.location
-  tags = {
-    workload   = "fabric-data-platform"
-    managed_by = "terraform"
+  rotate_when_changed = {
+    rotation = time_rotating.client_secret.id
   }
 }
 
+# A Fabric administrator adds this group to the tenant settings for service
+# principals (see README) - bootstrap doesn't change tenant settings.
+resource "azuread_group" "executors" {
+  display_name     = local.group_name
+  description      = "Identities allowed to deploy the Fabric data platform. Add to the Fabric tenant settings for service principals."
+  security_enabled = true
+  owners           = local.owners
+  members          = [azuread_service_principal.executor.object_id]
+}
+
+# --- Azure: one resource group per environment ---------------------------------
+
+resource "azurerm_resource_group" "this" {
+  for_each = local.environments
+
+  name     = each.value.resource_group
+  location = local.location
+  tags     = local.tags
+}
+
 resource "azurerm_role_assignment" "executor_contributor" {
-  scope                = azurerm_resource_group.capacities.id
+  for_each = azurerm_resource_group.this
+
+  scope                = each.value.id
   role_definition_name = "Contributor"
   principal_id         = azuread_service_principal.executor.object_id
   principal_type       = "ServicePrincipal"
 }
 
-# --- Fabric tenant settings (opt-in) -------------------------------------------
-# A tenant setting update replaces its whole group list, so the current groups
-# are read first and the executor group is added to them. Settings that are
-# already enabled for the entire organization already cover the executor and
-# are not touched.
+# --- Key Vault with the executor's credentials --------------------------------
 
-data "fabric_tenant_setting" "current" {
-  for_each = var.manage_fabric_tenant_settings ? toset(var.fabric_tenant_settings) : toset([])
+resource "azurerm_key_vault" "this" {
+  name                       = local.key_vault_name
+  location                   = local.location
+  resource_group_name        = azurerm_resource_group.this[var.key_vault_environment].name
+  tenant_id                  = data.azuread_client_config.current.tenant_id
+  sku_name                   = "standard"
+  rbac_authorization_enabled = true
+  purge_protection_enabled   = var.key_vault_purge_protection
+  soft_delete_retention_days = 90
+  tags                       = local.tags
 
-  setting_name = each.value
-}
-
-locals {
-  tenant_settings_to_update = {
-    for name, s in data.fabric_tenant_setting.current : name => s
-    if !(s.enabled && length(coalesce(s.enabled_security_groups, [])) == 0)
+  lifecycle {
+    precondition {
+      condition     = length(local.key_vault_name) <= 24
+      error_message = "Key Vault name ${local.key_vault_name} is longer than 24 characters. Use a shorter company_code."
+    }
   }
 }
 
-resource "fabric_tenant_setting" "executor" {
-  for_each = local.tenant_settings_to_update
+# Lets the person running bootstrap write and read the secrets.
+resource "azurerm_role_assignment" "bootstrap_secrets_officer" {
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = data.azuread_client_config.current.object_id
+}
 
-  setting_name     = each.key
-  enabled          = true
-  delete_behaviour = "NoChange"
+# Role assignments take a moment to apply in Key Vault.
+resource "time_sleep" "key_vault_rbac" {
+  create_duration = "90s"
+  depends_on      = [azurerm_role_assignment.bootstrap_secrets_officer]
+}
 
-  enabled_security_groups = setunion(
-    [for g in coalesce(each.value.enabled_security_groups, []) : { graph_id = g.graph_id }],
-    [{ graph_id = azuread_group.executors.object_id }],
-  )
+resource "azurerm_key_vault_secret" "client_secret" {
+  name            = "executor-client-secret"
+  value           = azuread_application_password.executor.value
+  content_type    = "Client secret for ${local.executor_name}"
+  expiration_date = azuread_application_password.executor.end_date
+  key_vault_id    = azurerm_key_vault.this.id
+  depends_on      = [time_sleep.key_vault_rbac]
+}
 
-  excluded_security_groups = [
-    for g in coalesce(each.value.excluded_security_groups, []) : { graph_id = g.graph_id }
-  ]
+resource "azurerm_key_vault_secret" "client_id" {
+  name         = "executor-client-id"
+  value        = azuread_application.executor.client_id
+  content_type = "Client (application) ID of ${local.executor_name}"
+  key_vault_id = azurerm_key_vault.this.id
+  depends_on   = [time_sleep.key_vault_rbac]
+}
+
+resource "azurerm_key_vault_secret" "tenant_id" {
+  name         = "executor-tenant-id"
+  value        = data.azuread_client_config.current.tenant_id
+  content_type = "Entra tenant ID"
+  key_vault_id = azurerm_key_vault.this.id
+  depends_on   = [time_sleep.key_vault_rbac]
+}
+
+# --- Shared settings for ../ and ../../fabric ---------------------------------
+# Names and IDs only, no secrets - safe to commit.
+
+resource "local_file" "platform" {
+  filename = "${path.module}/../../platform.json"
+  content = "${jsonencode({
+    subscription_id    = var.subscription_id
+    tenant_id          = data.azuread_client_config.current.tenant_id
+    location           = local.location
+    executor_client_id = azuread_application.executor.client_id
+    key_vault_name     = azurerm_key_vault.this.name
+    environments       = local.environments
+  })}\n"
 }

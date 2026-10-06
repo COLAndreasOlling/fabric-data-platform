@@ -1,43 +1,17 @@
-variable "subscription_id" {
-  description = "Azure subscription that hosts the Fabric capacities."
-  type        = string
-}
+# Names, region and subscription come from ../platform.json, written by
+# bootstrap/. Only sizing and extra admins are set here.
 
-variable "location" {
-  description = "Azure region for the capacities. Use the same region as the Fabric tenant home region where possible."
-  type        = string
-  default     = "westeurope"
-}
-
-variable "resource_group_name" {
-  description = "Resource group for the capacities (created by bootstrap/)."
-  type        = string
-  default     = "rg-fabric-capacities"
-}
-
-variable "create_resource_group" {
-  description = "Create the resource group here. Leave false when bootstrap/ created it (the executor can't create resource groups)."
-  type        = bool
-  default     = false
-}
-
-variable "capacities" {
-  description = "Fabric capacities to create. name must be lowercase letters and digits (3-63), unique in Azure; sku is F2, F4, F8, ... F2048."
-  type = map(object({
-    name = string
-    sku  = string
-  }))
+variable "capacity_skus" {
+  description = "Capacity size per environment: F2, F4, F8, ... F2048."
+  type        = map(string)
   default = {
-    dev  = { name = "fcdataplatformdev", sku = "F2" }
-    prod = { name = "fcdataplatformprod", sku = "F2" }
+    Dev  = "F2"
+    Prod = "F2"
   }
 
   validation {
-    condition = alltrue([
-      for c in values(var.capacities) :
-      can(regex("^[a-z][a-z0-9]{2,62}$", c.name)) && can(regex("^F[0-9]+$", c.sku))
-    ])
-    error_message = "Capacity names must be 3-63 lowercase letters/digits starting with a letter; sku must look like F2, F4, F64."
+    condition     = alltrue([for sku in values(var.capacity_skus) : can(regex("^F[0-9]+$", sku))])
+    error_message = "SKUs must look like F2, F4, F64."
   }
 }
 

@@ -1,21 +1,18 @@
-data "azurerm_client_config" "current" {}
-
-resource "azurerm_resource_group" "this" {
-  count = var.create_resource_group ? 1 : 0
-
-  name     = var.resource_group_name
-  location = var.location
-  tags     = var.tags
+locals {
+  # Written by bootstrap/.
+  platform = jsondecode(file("${path.module}/../platform.json"))
 }
+
+data "azurerm_client_config" "current" {}
 
 # Capacities are billed while they are running - pause them in the Azure
 # portal when not in use.
 resource "azurerm_fabric_capacity" "this" {
-  for_each = var.capacities
+  for_each = local.platform.environments
 
-  name                = each.value.name
-  resource_group_name = var.resource_group_name
-  location            = var.location
+  name                = each.value.capacity_name
+  resource_group_name = each.value.resource_group
+  location            = local.platform.location
   tags                = var.tags
 
   # The service principal running Terraform must be capacity admin so the
@@ -23,9 +20,7 @@ resource "azurerm_fabric_capacity" "this" {
   administration_members = setunion([data.azurerm_client_config.current.object_id], var.capacity_admins)
 
   sku {
-    name = each.value.sku
+    name = lookup(var.capacity_skus, each.key, "F2")
     tier = "Fabric"
   }
-
-  depends_on = [azurerm_resource_group.this]
 }
