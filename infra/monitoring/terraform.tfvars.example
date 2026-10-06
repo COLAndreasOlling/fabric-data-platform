@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and fill in. Run as yourself (az login).
+# Only needed for Key Vaults that bootstrap didn't create - bootstrap has these alerts built in.
+
+alert_email_addresses = "dataplatform@customer.com, you@columbusglobal.com"
+# expiry_warning_days = 90
+
+# Default: the executor from ../platform.json. Label => client (application) ID.
+# service_principals = {
+#   my-fabric-sp = "00000000-0000-0000-0000-000000000000"
+# }
+
+# Credentials with a known expiry date:
+# extra_credentials = {
+#   some-api-key = "2027-03-31T00:00:00Z"
+# }
+
+# If the vault already has an Event Grid system topic (only one is allowed):
+# existing_system_topic_id = "/subscriptions/.../resourceGroups/.../providers/Microsoft.EventGrid/systemTopics/..."
+
+# See the emails end to end (marker expires 10 minutes after apply), then set back to false:
+# send_test_alert = true

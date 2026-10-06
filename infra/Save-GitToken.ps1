@@ -58,15 +58,18 @@ try {
 
 Write-Host "Saved as secret '$SecretName' in Key Vault '$KeyVaultName' (expires $($ExpiresOn.ToString('yyyy-MM-dd')))." -ForegroundColor Green
 
-# Early warning: Key Vault alerts 30 days before a secret expires, so a reminder
-# secret that expires (WarningDays - 30) days earlier gives an alert WarningDays ahead.
-$reminderExpires = $ExpiresOn.AddDays(-($WarningDays - 30))
-if ($reminderExpires -gt (Get-Date).AddDays(30)) {
-  az keyvault secret set --vault-name $KeyVaultName --name "$SecretName-renewal-reminder" `
-    --value "$SecretName expires $($ExpiresOn.ToString('yyyy-MM-dd')). Create a new GitHub token, run infra/Save-GitToken.ps1, increase git_secret_version and apply infra/fabric." `
-    --expires ($reminderExpires.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) `
-    --content-type 'Reminder (not a credential)' -o none --only-show-errors
-  Write-Host "Expiry warnings: $($ExpiresOn.AddDays(-$WarningDays).ToString('yyyy-MM-dd')), $($ExpiresOn.AddDays(-30).ToString('yyyy-MM-dd')) and $($ExpiresOn.ToString('yyyy-MM-dd'))."
-} else {
-  Write-Host "Token expires in less than $WarningDays days - you'll be warned 30 days before and on the expiry day." -ForegroundColor Yellow
+# Expiry warnings (see infra/modules/expiry-alerts): marker secrets named
+# expiry-* trigger the alert emails - expiry-<name>-early for the first warning
+# WarningDays ahead, expiry-<name> for 30 days before and the expiry day.
+$message = "$SecretName expires $($ExpiresOn.ToString('yyyy-MM-dd')). Create a new GitHub token, run infra/Save-GitToken.ps1, increase git_secret_version and apply infra/fabric."
+$markers = [ordered]@{
+  "expiry-$SecretName-early" = $ExpiresOn.AddDays(-($WarningDays - 30))
+  "expiry-$SecretName"       = $ExpiresOn
 }
+foreach ($name in $markers.Keys) {
+  az keyvault secret set --vault-name $KeyVaultName --name $name --value $message `
+    --expires ($markers[$name].ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) `
+    --content-type "Expiry marker for $SecretName (not a credential)" -o none --only-show-errors
+  if ($LASTEXITCODE -ne 0) { Write-Warning "Couldn't write expiry marker $name - you won't get expiry emails for this token." }
+}
+Write-Host "Expiry emails (if alerts are set up on this vault): $($ExpiresOn.AddDays(-$WarningDays).ToString('yyyy-MM-dd')), $($ExpiresOn.AddDays(-($WarningDays - 30)).ToString('yyyy-MM-dd')), $($ExpiresOn.AddDays(-30).ToString('yyyy-MM-dd')) and $($ExpiresOn.ToString('yyyy-MM-dd'))."
